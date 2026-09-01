@@ -1,0 +1,18 @@
+# Ambientes virtuais
+.venv/
+entregas/env/
+__pycache__/
+*.pyc
+
+# Credenciais — nunca versionar
+entregas/credenciais/
+**/client_secret.json
+**/token.json
+**/*.pickle
+
+# MTG-Jamendo: arquivos brutos grandes, reprodutíveis via docs/roteiroModelo.md
+# (mantém o TSV de tags e a tabela já processada, exclui só os shards .tar.gz)
+dados_externos/mtg_jamendo/raw_shards/
+
+# Sistema
+.DS_Store
