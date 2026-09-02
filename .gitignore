@@ -1,11 +1,10 @@
 # Ambientes virtuais
 .venv/
-entregas/env/
 __pycache__/
 *.pyc
 
 # Credenciais — nunca versionar
-entregas/credenciais/
+produto/credenciais/
 **/client_secret.json
 **/token.json
 **/*.pickle

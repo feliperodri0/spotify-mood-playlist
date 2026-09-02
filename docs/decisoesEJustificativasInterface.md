@@ -54,6 +54,17 @@ Este documento registra as decisões de `entregas/interface_playlist.ipynb` (o m
 
 **Limitação registrada:** a busca (`search().list`) usa o primeiro resultado do YouTube para "nome da faixa + artista" — não há garantia de que seja a gravação oficial correta (pode vir um cover, lyric video de terceiro, ou não encontrar nada para faixas de catálogo obscuro/internacional). O script reporta explicitamente quais faixas não foram encontradas, em vez de falhar silenciosamente ou inserir o vídeo errado sem aviso.
 
+## Segunda prova de conceito (Spotify) — avaliada e abortada
+
+**Decisão:** escrever `spotify_playlist_oauth.py` (mesmo padrão do YouTube, usando `spotipy`), verificando antes de codificar que a biblioteca instalada (2.26.0) já usa o endpoint atual (`POST /me/playlists`, não o removido em fevereiro/2026) e testando o motor até o ponto da autenticação — mesmo rigor aplicado ao script do YouTube.
+**Por que foi abortada:** ao configurar as credenciais no Spotify Developer Dashboard, o usuário encontrou a exigência de conta Spotify Premium para acesso de desenvolvedor. Sem alternativa gratuita, a via foi descartada — o script foi removido do repositório (não deixado como código morto).
+**Justificativa de não manter o código mesmo assim:** um script que nunca vai ser executado (por falta de conta Premium) e que ninguém vai manter atualizado contra futuras mudanças de API do Spotify é só uma fonte de confusão futura ("por que isso existe se não funciona?") — melhor documentar a tentativa e a razão do abandono aqui do que deixar um artefato morto no código.
+
+## Reorganização do repositório
+
+**Decisão:** separar `entregas/` (só os 4 notebooks + artefatos que eles geram) de uma pasta nova `produto/` (todo o código de MVP: `motor_playlist.py`, `youtube_playlist_oauth.py`, `credenciais/`, `app_local/`).
+**Justificativa:** `entregas/` tinha acumulado duas responsabilidades diferentes — a entrega formal do curso (notebooks) e código de produto (scripts, backend, credenciais) — crescido organicamente ao longo de várias fases sem um ponto de checagem estrutural. Misturar os dois torna mais difícil para alguém (incluindo o próprio usuário, que sinalizou isso) entender rapidamente "o que é a entrega" vs. "o que é exploração adicional". A separação também resolve, de forma incidental, o fato de `credenciais/` estar dentro da pasta que mais frequentemente é aberta/navegada (`entregas/`) — isolá-la em `produto/credenciais/`, ainda com o mesmo `.gitignore`, reduz a chance de alguém arrastar sem querer algo sensível pra outro contexto.
+
 ## O que foi deixado de fora, deliberadamente
 
 **Decisão:** não incluir os controles secundários do mockup original (duração da playlist, faixa-semente inicial, alternância variedade/previsibilidade).

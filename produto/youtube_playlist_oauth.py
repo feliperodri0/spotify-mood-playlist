@@ -43,17 +43,20 @@ gerar playlists pontuais, escolhidas à mão, para validação por escuta.
 """
 
 import pickle
+import sys
 from pathlib import Path
 
-import pandas as pd
-import joblib
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-SCOPES = ["https://www.googleapis.com/auth/youtube"]
 DIR = Path(__file__).parent
+ENTREGAS_DIR = DIR.parent / "entregas"
+sys.path.insert(0, str(DIR))
+from motor_playlist import PipelineMood  # noqa: E402
+
+SCOPES = ["https://www.googleapis.com/auth/youtube"]
 CLIENT_SECRET_FILE = DIR / "credenciais/client_secret.json"
 TOKEN_FILE = DIR / "credenciais/token.json"
 
@@ -141,89 +144,11 @@ def criar_playlist_youtube(youtube, titulo, descricao, video_ids, privacidade="u
 
 
 def gerar_playlist_youtube_real(palavras, n=15, privacidade="unlisted"):
-    """Ponta a ponta: gera a playlist com o motor da Fase 4, resolve cada faixa
-    para um vídeo do YouTube, e cria a playlist real na conta autenticada."""
-    modelo = joblib.load(DIR / "modelo_mood.joblib")
-    pt, scaler, knn = modelo["power_transformer"], modelo["scaler"], modelo["knn"]
-    features, cols_assimetricas = modelo["features"], modelo["cols_assimetricas"]
-    vocab_df, vocab_X = modelo["vocab_df"], modelo["vocab_X"]
-
-    df_clean = pd.read_parquet(DIR / "df_clean.parquet")
-    mood_df = pd.read_parquet(DIR / "catalogo_com_mood.parquet")
-    assert (df_clean["track_id"].values == mood_df["track_id"].values).all()
-    df = df_clean.copy()
-    df["mood"] = mood_df["mood"].values
-
-    X_raw = df[features].copy()
-    X_raw[cols_assimetricas] = pt.transform(X_raw[cols_assimetricas])
-    X = scaler.transform(X_raw[features])
-
-    CAMELOT_MAIOR = {0: 8, 1: 3, 2: 10, 3: 5, 4: 12, 5: 7, 6: 2, 7: 9, 8: 4, 9: 11, 10: 6, 11: 1}
-    CAMELOT_MENOR = {0: 5, 1: 12, 2: 7, 3: 2, 4: 9, 5: 4, 6: 11, 7: 6, 8: 1, 9: 8, 10: 3, 11: 10}
-
-    def camelot(key, mode):
-        numero = CAMELOT_MAIOR[key] if mode == 1 else CAMELOT_MENOR[key]
-        return (numero, "B" if mode == 1 else "A")
-
-    def penalidade_harmonica(a, b):
-        (na, la), (nb, lb) = a, b
-        if na == nb and la == lb:
-            return 0.0
-        if na == nb and la != lb:
-            return 0.15
-        diferenca = min((na - nb) % 12, (nb - na) % 12)
-        if diferenca == 1 and la == lb:
-            return 0.15
-        return 0.5
-
-    df["camelot"] = df.apply(lambda r: camelot(int(r["key"]), int(r["mode"])), axis=1)
-
-    def selecionar_candidatas(palavras, n):
-        indices_ancoras = [vocab_df.index.get_loc(p) for p in palavras]
-        alvo = vocab_X[indices_ancoras].mean(axis=0).reshape(1, -1)
-        multiplicador = 6
-        while True:
-            k = min(n * multiplicador, len(df))
-            distancias, indices = knn.kneighbors(alvo, n_neighbors=k)
-            vistos, idx_finais = set(), []
-            for idx_faixa in indices[0]:
-                linha = df.iloc[idx_faixa]
-                chave = (linha["track_name"], linha["artists"])
-                if chave not in vistos:
-                    vistos.add(chave)
-                    idx_finais.append(idx_faixa)
-                if len(idx_finais) == n:
-                    break
-            if len(idx_finais) == n or k >= len(df):
-                break
-            multiplicador *= 2
-        return df.iloc[idx_finais].reset_index(drop=True), X[idx_finais]
-
-    def sequenciar(candidatas, X_candidatas, peso_tempo=0.5, peso_harmonico=1.0):
-        import numpy as np
-        from scipy.spatial.distance import cdist
-
-        n_ = len(candidatas)
-        custo = cdist(X_candidatas, X_candidatas)
-        tempos = candidatas["tempo"].values
-        dist_tempo = np.abs(tempos[:, None] - tempos[None, :]) / df["tempo"].std()
-        camelots = candidatas["camelot"].tolist()
-        for i in range(n_):
-            for j in range(n_):
-                if i != j:
-                    custo[i, j] += peso_tempo * dist_tempo[i, j] + peso_harmonico * penalidade_harmonica(
-                        camelots[i], camelots[j]
-                    )
-        visitado, atual, restante = [0], 0, set(range(1, n_))
-        while restante:
-            proximo = min(restante, key=lambda j: custo[atual, j])
-            visitado.append(proximo)
-            restante.remove(proximo)
-            atual = proximo
-        return candidatas.iloc[visitado].reset_index(drop=True)
-
-    candidatas, X_cand = selecionar_candidatas(palavras, n)
-    playlist = sequenciar(candidatas, X_cand)
+    """Ponta a ponta: gera a playlist com o motor único (motor_playlist.py),
+    resolve cada faixa para um vídeo do YouTube, e cria a playlist real na
+    conta autenticada."""
+    pipeline = PipelineMood(ENTREGAS_DIR)
+    playlist = pipeline.gerar_playlist(palavras, n=n)
 
     print(f"Playlist gerada ({len(playlist)} faixas): {' + '.join(palavras)}")
     print("Resolvendo faixas no YouTube...")

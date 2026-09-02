@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Constelação de Mood — Produto Local</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #120E16;
+    --surface: #1B1521;
+    --surface-raised: #241D2A;
+    --ink: #F2EDF7;
+    --ink-dim: #9C93A8;
+    --ink-faint: #6B6478;
+    --line: #322C3A;
+    --line-soft: #241F2A;
+    --accent: #F2A65A;
+    --accent-soft: rgba(242, 166, 90, 0.14);
+    --accent-ink: #1A1109;
+    --good: #7FC49A;
+    --bad: #E28787;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--ground); }
+  body { color: var(--ink); font-family: 'Manrope', -apple-system, 'Segoe UI', sans-serif; line-height: 1.5; }
+  h1, h2, h3 { font-family: 'Bricolage Grotesque', 'Manrope', sans-serif; text-wrap: balance; margin: 0; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  img { max-width: 100%; }
+
+  .page { max-width: 1180px; margin: 0 auto; padding: 40px 32px 80px; display: flex; flex-direction: column; gap: 32px; }
+
+  header.hero { display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line-soft); padding-bottom: 24px; }
+  .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+  header.hero h1 { font-size: clamp(28px, 4vw, 42px); font-weight: 600; }
+  header.hero p { max-width: 68ch; color: var(--ink-dim); font-size: 14.5px; margin: 0; }
+  .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin-right: 6px; }
+
+  .layout { display: grid; grid-template-columns: minmax(360px, 460px) 1fr; gap: 28px; align-items: start; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .panel h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+  .panel .hint { color: var(--ink-dim); font-size: 13px; margin: 0 0 16px; }
+
+  svg.plot { width: 100%; height: auto; display: block; overflow: visible; }
+  .axis-line { stroke: var(--line); stroke-width: 1; }
+  .axis-label { fill: var(--ink-faint); font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .quadrant-label { fill: var(--ink-faint); font-size: 9.5px; font-style: italic; opacity: 0.55; }
+  .connector { stroke: var(--accent); stroke-width: 1.4; stroke-dasharray: 3 4; opacity: 0.55; fill: none; pointer-events: none; }
+  .target-marker { fill: none; stroke: var(--accent); stroke-width: 1.2; opacity: 0.8; pointer-events: none; }
+  .node-group { cursor: pointer; }
+  .node-halo { fill: var(--accent-soft); opacity: 0; transition: opacity 0.18s ease; }
+  .node-group:hover .node-halo, .node-group.selected .node-halo { opacity: 1; }
+  .node-dot { fill: var(--surface-raised); stroke: var(--ink-faint); stroke-width: 1.4; transition: fill 0.18s ease, stroke 0.18s ease; }
+  .node-group:hover .node-dot { stroke: var(--ink-dim); }
+  .node-group.selected .node-dot { fill: var(--accent); stroke: var(--accent); }
+  .node-label { fill: var(--ink-dim); font-size: 12.5px; font-weight: 500; pointer-events: none; transition: fill 0.18s ease; }
+  .node-group.selected .node-label { fill: var(--ink); font-weight: 700; }
+  .node-order { fill: var(--accent-ink); font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; text-anchor: middle; pointer-events: none; opacity: 0; transition: opacity 0.18s ease; }
+  .node-group.selected .node-order { opacity: 1; }
+  .overlap-note { margin-top: 12px; font-size: 11.5px; color: var(--ink-faint); border-top: 1px dashed var(--line); padding-top: 10px; }
+
+  .selection-row { display: flex; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-raised); border: 1px solid var(--line); color: var(--ink); padding: 5px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+  .chip .n { font-family: 'JetBrains Mono', monospace; color: var(--accent); font-size: 11px; }
+  .placeholder-chip { color: var(--ink-faint); font-size: 12.5px; font-style: italic; }
+
+  .size-row { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+  .size-row label { font-size: 12.5px; color: var(--ink-dim); }
+  .size-row input[type="number"] {
+    width: 64px; background: var(--surface-raised); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 7px; padding: 5px 8px; font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  }
+
+  button { font-family: 'Manrope', sans-serif; cursor: pointer; border: none; }
+  button.primary {
+    margin-top: 16px; width: 100%; background: var(--accent); color: var(--accent-ink);
+    border-radius: 10px; padding: 12px 18px; font-size: 14.5px; font-weight: 700;
+    transition: filter 0.15s ease;
+  }
+  button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+  button.primary:disabled { background: var(--surface-raised); color: var(--ink-faint); cursor: not-allowed; }
+
+  button.youtube {
+    margin-top: 12px; width: 100%; background: transparent; color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 10px; padding: 11px 18px; font-size: 13.5px; font-weight: 700;
+  }
+  button.youtube:hover:not(:disabled) { background: var(--accent-soft); }
+  button.youtube:disabled { border-color: var(--line); color: var(--ink-faint); cursor: not-allowed; }
+
+  select.privacidade {
+    margin-top: 10px; width: 100%; background: var(--surface-raised); border: 1px solid var(--line);
+    color: var(--ink); border-radius: 8px; padding: 8px 10px; font-family: 'Manrope', sans-serif; font-size: 13px;
+  }
+
+  .result-panel { min-height: 380px; display: flex; flex-direction: column; }
+  .result-empty { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--ink-faint); font-size: 13.5px; padding: 30px 20px; border: 1px dashed var(--line); border-radius: 10px; }
+  .result-header { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+  .result-header .combo { font-size: 14.5px; font-weight: 700; }
+  .result-header .combo .n { color: var(--accent); }
+  .result-header .meta { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--ink-dim); }
+
+  .youtube-box { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
+  .youtube-box a { color: var(--accent); font-weight: 700; word-break: break-all; }
+  .youtube-box .aviso { color: var(--bad); font-size: 12px; margin-top: 6px; }
+
+  .track-row { display: grid; grid-template-columns: 24px 1fr auto auto; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 8px; }
+  .track-row:hover { background: var(--surface-raised); }
+  .track-idx { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--ink-faint); }
+  .track-info { min-width: 0; }
+  .track-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13.5px; max-width: 100%; }
+  .track-name .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-name a.listen { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; color: var(--ink-faint); text-decoration: none; border: 1px solid var(--line); font-size: 9px; }
+  .track-name a.listen:hover { color: var(--accent); border-color: var(--accent); }
+  .track-sub { font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-sub .genre { color: var(--ink-faint); }
+  .track-sub .genre::before { content: "· "; }
+  .badges { display: flex; gap: 6px; }
+  .badge { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--line); color: var(--ink-dim); white-space: nowrap; }
+  .badge.bpm { color: var(--ink); }
+  .badge.camelot { color: var(--accent); }
+
+  .transition { display: grid; grid-template-columns: 24px 1fr; gap: 12px; padding: 1px 8px; }
+  .transition .line { grid-column: 1/-1; display: flex; align-items: center; gap: 8px; padding-left: 24px; }
+  .transition .stem { width: 1px; height: 12px; background: var(--line); margin-left: 11.5px; }
+  .transition .delta { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink-faint); }
+  .transition .delta.smooth { color: var(--good); }
+
+  footer.note { border-top: 1px solid var(--line-soft); padding-top: 18px; color: var(--ink-faint); font-size: 12px; max-width: 82ch; }
+  footer.note strong { color: var(--ink-dim); }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent-ink); border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: -1px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="hero">
+    <div class="eyebrow"><span class="status-dot"></span>Produto local — rodando em localhost:5001</div>
+    <h1>Constelação de Mood</h1>
+    <p>Escolha até 3 pontos no mapa de energia × valência. A playlist é gerada ao vivo pelo backend Flask local (Fases 2-3), e pode virar uma playlist de verdade no YouTube, usando o login já autenticado nesta máquina.</p>
+  </header>
+
+  <div class="layout">
+    <section class="panel">
+      <h2>Mapa de mood</h2>
+      <p class="hint">Eixo horizontal: valência (triste → feliz). Eixo vertical: energia (calmo → intenso).</p>
+      <div class="plot-wrap">
+        <svg class="plot" viewBox="0 0 400 400" role="img" aria-label="Mapa de mood por energia e valência">
+          <line class="axis-line" x1="50" y1="350" x2="350" y2="350"></line>
+          <line class="axis-line" x1="50" y1="50" x2="50" y2="350"></line>
+          <text class="axis-label" x="200" y="378" text-anchor="middle">valência →</text>
+          <text class="axis-label" x="26" y="200" text-anchor="middle" transform="rotate(-90 26 200)">energia →</text>
+          <text class="quadrant-label" x="345" y="65" text-anchor="end">intenso · feliz</text>
+          <text class="quadrant-label" x="55" y="65" text-anchor="start">intenso · triste</text>
+          <text class="quadrant-label" x="345" y="340" text-anchor="end">calmo · feliz</text>
+          <text class="quadrant-label" x="55" y="340" text-anchor="start">calmo · triste</text>
+          <path id="target-path" class="connector" d=""></path>
+          <circle id="target-marker" class="target-marker" cx="0" cy="0" r="0"></circle>
+          <g id="nodes"></g>
+        </svg>
+      </div>
+      <p class="overlap-note">"Calmo" e "Acústico" caem no mesmo ponto de energia/valência — diferem só em <span class="mono">acousticness</span>, eixo que este mapa 2D não mostra.</p>
+
+      <div class="selection-row" id="selection-row"><span class="placeholder-chip">Nenhum mood selecionado ainda</span></div>
+
+      <div class="size-row">
+        <label for="tamanho">Faixas na playlist:</label>
+        <input type="number" id="tamanho" value="20" min="1" max="50">
+      </div>
+
+      <button class="primary" id="preview-btn" disabled>Pré-visualizar (grátis)</button>
+
+      <select class="privacidade" id="privacidade">
+        <option value="unlisted">Não listada (link compartilhável)</option>
+        <option value="private">Privada (só eu)</option>
+        <option value="public">Pública</option>
+      </select>
+      <button class="youtube" id="youtube-btn" disabled>Criar playlist de verdade no YouTube</button>
+    </section>
+
+    <section class="panel result-panel">
+      <h2>Playlist</h2>
+      <p class="hint" id="result-hint">Gere uma pré-visualização primeiro — não gasta cota da API.</p>
+      <div id="result-area"><div class="result-empty">Selecione 1 a 3 moods e clique em "Pré-visualizar".</div></div>
+    </section>
+  </div>
+
+  <footer class="note">
+    <strong>Sobre este protótipo:</strong> roda 100% local — o backend Flask carrega o catálogo real (113.549 faixas) e os artefatos das Fases 2-3 uma vez, na inicialização. "Pré-visualizar" gera a sequência sem custo de API. "Criar no YouTube" resolve cada faixa via busca (100 unidades de cota cada) e cria a playlist de verdade na conta autenticada — evite clicar repetidas vezes sem necessidade, a cota diária é limitada.
+  </footer>
+</div>
+
+<script>
+  const MOOD_LABELS = {
+    Energetico: "Energético", Feliz: "Feliz", Dancante: "Dançante", Calmo: "Calmo",
+    Melancolico: "Melancólico", Intenso: "Intenso", Instrumental: "Instrumental", Acustico: "Acústico",
+  };
+  const NUDGES = { Calmo: [-16, -10], Acustico: [16, 10] };
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const nodesG = document.getElementById("nodes");
+  const selectionRow = document.getElementById("selection-row");
+  const previewBtn = document.getElementById("preview-btn");
+  const youtubeBtn = document.getElementById("youtube-btn");
+  const resultArea = document.getElementById("result-area");
+  const resultHint = document.getElementById("result-hint");
+  const targetPath = document.getElementById("target-path");
+  const targetMarker = document.getElementById("target-marker");
+  const tamanhoInput = document.getElementById("tamanho");
+  const privacidadeSelect = document.getElementById("privacidade");
+
+  let selected = [];
+  let vocabMeta = {};
+  let ultimaPreview = null;
+  const nodeEls = {};
+
+  function toXY(energy, valence) {
+    return { x: 50 + valence * 300, y: 350 - energy * 300 };
+  }
+
+  function linkYoutube(nome, artista) {
+    return "https://www.youtube.com/results?search_query=" + encodeURIComponent(nome + " " + artista);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  async function iniciar() {
+    const resp = await fetch("/api/vocabulario");
+    const vocab = await resp.json();
+    Object.keys(vocab).forEach((key) => {
+      vocabMeta[key] = { label: MOOD_LABELS[key] || key, energy: vocab[key].energy, valence: vocab[key].valence, nudge: NUDGES[key] };
+    });
+    desenharMapa();
+  }
+
+  function desenharMapa() {
+    Object.keys(vocabMeta).forEach((key) => {
+      const meta = vocabMeta[key];
+      let { x, y } = toXY(meta.energy, meta.valence);
+      if (meta.nudge) { x += meta.nudge[0]; y += meta.nudge[1]; }
+
+      const g = document.createElementNS(svgNS, "g");
+      g.setAttribute("class", "node-group");
+      g.setAttribute("tabindex", "0");
+      g.setAttribute("role", "button");
+      g.setAttribute("aria-pressed", "false");
+      g.setAttribute("aria-label", meta.label);
+
+      const halo = document.createElementNS(svgNS, "circle");
+      halo.setAttribute("class", "node-halo"); halo.setAttribute("cx", x); halo.setAttribute("cy", y); halo.setAttribute("r", 20);
+      g.appendChild(halo);
+
+      const dot = document.createElementNS(svgNS, "circle");
+      dot.setAttribute("class", "node-dot"); dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("r", 9);
+      g.appendChild(dot);
+
+      const order = document.createElementNS(svgNS, "text");
+      order.setAttribute("class", "node-order"); order.setAttribute("x", x); order.setAttribute("y", y + 3.5);
+      g.appendChild(order);
+
+      const label = document.createElementNS(svgNS, "text");
+      label.setAttribute("class", "node-label");
+      const dx = meta.valence > 0.6 ? -12 : 14;
+      label.setAttribute("x", x + dx); label.setAttribute("y", y + 4);
+      label.setAttribute("text-anchor", meta.valence > 0.6 ? "end" : "start");
+      label.textContent = meta.label;
+      g.appendChild(label);
+
+      if (meta.nudge) {
+        const t = toXY(meta.energy, meta.valence);
+        const dashed = document.createElementNS(svgNS, "line");
+        dashed.setAttribute("x1", t.x); dashed.setAttribute("y1", t.y);
+        dashed.setAttribute("x2", x); dashed.setAttribute("y2", y);
+        dashed.setAttribute("stroke", "var(--line)"); dashed.setAttribute("stroke-width", "1"); dashed.setAttribute("stroke-dasharray", "2 3");
+        nodesG.appendChild(dashed);
+      }
+
+      g.addEventListener("click", () => toggle(key));
+      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(key); } });
+
+      nodesG.appendChild(g);
+      nodeEls[key] = { g, order, x, y };
+    });
+  }
+
+  function toggle(key) {
+    const idx = selected.indexOf(key);
+    if (idx >= 0) selected.splice(idx, 1);
+    else { if (selected.length >= 3) return; selected.push(key); }
+    render();
+  }
+
+  function render() {
+    Object.keys(nodeEls).forEach((key) => {
+      const { g, order } = nodeEls[key];
+      const pos = selected.indexOf(key);
+      g.classList.toggle("selected", pos >= 0);
+      g.setAttribute("aria-pressed", String(pos >= 0));
+      order.textContent = pos >= 0 ? String(pos + 1) : "";
+    });
+
+    if (selected.length === 0) {
+      selectionRow.innerHTML = '<span class="placeholder-chip">Nenhum mood selecionado ainda</span>';
+      targetPath.setAttribute("d", ""); targetMarker.setAttribute("r", "0");
+    } else {
+      selectionRow.innerHTML = selected.map((k, i) => `<span class="chip"><span class="n">${i + 1}</span>${vocabMeta[k].label}</span>`).join("");
+      const pts = selected.map((k) => nodeEls[k]);
+      targetPath.setAttribute("d", pts.length > 1 ? "M " + pts.map((p) => `${p.x} ${p.y}`).join(" L ") : "");
+      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+      const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+      targetMarker.setAttribute("cx", cx); targetMarker.setAttribute("cy", cy);
+      targetMarker.setAttribute("r", pts.length > 1 ? 5 : 0);
+    }
+    previewBtn.disabled = selected.length === 0;
+    youtubeBtn.disabled = true;
+    ultimaPreview = null;
+  }
+
+  function renderTracklist(faixas, comboLabel) {
+    let html = `<div class="result-header">
+        <div class="combo"><span class="n">${faixas.length}</span> faixas · ${comboLabel}</div>
+        <div class="meta">sequenciado por transição suave</div>
+      </div><div class="tracklist">`;
+    faixas.forEach((t, i) => {
+      const yt = linkYoutube(t.track_name, t.artists);
+      html += `<div class="track-row">
+          <div class="track-idx">${String(i + 1).padStart(2, "0")}</div>
+          <div class="track-info">
+            <div class="track-name"><span class="title">${escapeHtml(t.track_name)}</span>
+              <a class="listen" href="${yt}" target="_blank" rel="noopener noreferrer" title="Buscar no YouTube">▶</a></div>
+            <div class="track-sub">${escapeHtml(t.artists)}<span class="genre">${escapeHtml(t.track_genre)}</span></div>
+          </div>
+          <div class="badges"><span class="badge camelot">${t.camelot}</span></div>
+          <div class="badges"><span class="badge bpm mono">${t.tempo.toFixed(0)} BPM</span></div>
+        </div>`;
+      if (i < faixas.length - 1) {
+        const delta = Math.abs(t.tempo - faixas[i + 1].tempo);
+        html += `<div class="transition"><div class="line"><div class="stem"></div>
+            <span class="delta ${delta <= 10 ? "smooth" : ""} mono">Δ ${delta.toFixed(0)} BPM</span></div></div>`;
+      }
+    });
+    return html + "</div>";
+  }
+
+  previewBtn.addEventListener("click", async () => {
+    const n = parseInt(tamanhoInput.value, 10) || 20;
+    previewBtn.disabled = true;
+    previewBtn.innerHTML = '<span class="spinner"></span>Gerando...';
+    resultArea.innerHTML = '<div class="result-empty">Consultando o backend local...</div>';
+    try {
+      const resp = await fetch("/api/preview", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ palavras: selected, n }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.erro || "Erro desconhecido");
+      ultimaPreview = { palavras: [...selected], n };
+      const comboLabel = selected.map((k) => vocabMeta[k].label).join(" + ");
+      resultArea.innerHTML = renderTracklist(data.faixas, comboLabel);
+      resultHint.textContent = "Prévia gerada. Se estiver boa, pode criar a playlist de verdade no YouTube.";
+      youtubeBtn.disabled = false;
+    } catch (e) {
+      resultArea.innerHTML = `<div class="result-empty">Erro: ${escapeHtml(e.message)}</div>`;
+    } finally {
+      previewBtn.disabled = false;
+      previewBtn.textContent = "Pré-visualizar (grátis)";
+    }
+  });
+
+  youtubeBtn.addEventListener("click", async () => {
+    if (!ultimaPreview) return;
+    youtubeBtn.disabled = true;
+    youtubeBtn.innerHTML = '<span class="spinner"></span>Criando no YouTube (pode levar um tempo)...';
+    try {
+      const resp = await fetch("/api/criar-youtube", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ palavras: ultimaPreview.palavras, n: ultimaPreview.n, privacidade: privacidadeSelect.value }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.erro || "Erro desconhecido");
+
+      let aviso = "";
+      if (data.nao_encontradas && data.nao_encontradas.length) {
+        aviso = `<div class="aviso">${data.nao_encontradas.length} faixa(s) não encontrada(s) no YouTube: ${escapeHtml(data.nao_encontradas.join("; "))}</div>`;
+      }
+      const box = `<div class="youtube-box">Playlist criada: <a href="${data.url}" target="_blank" rel="noopener noreferrer">${data.url}</a>${aviso}</div>`;
+      resultArea.insertAdjacentHTML("afterbegin", box);
+    } catch (e) {
+      resultArea.insertAdjacentHTML("afterbegin", `<div class="youtube-box aviso">Erro ao criar no YouTube: ${escapeHtml(e.message)}</div>`);
+    } finally {
+      youtubeBtn.disabled = false;
+      youtubeBtn.textContent = "Criar playlist de verdade no YouTube";
+    }
+  });
+
+  iniciar();
+</script>
+</body>
+</html>
