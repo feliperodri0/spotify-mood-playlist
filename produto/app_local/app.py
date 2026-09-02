@@ -36,6 +36,18 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 pipeline = PipelineMood(ENTREGAS)
 print("Catálogo carregado:", len(pipeline.df), "faixas")
 
+# Limite de faixas por playlist, definido pela cota da YouTube Data API v3:
+# cada faixa custa 100 unidades (search) + 50 (playlistItems.insert) = 150,
+# mais 50 fixas para criar a playlist (playlists.insert) -> custo(n) = 50 + 150n.
+# Cota padrão: 10.000 unidades/dia. TAMANHO_MAXIMO=30 -> 4.550 unidades (~45% da
+# cota diária), deixando margem para gerar mais de uma playlist no mesmo dia.
+# Justificativa completa em docs/decisoesEJustificativasInterface.md.
+TAMANHO_MAXIMO = 30
+
+
+def custo_cota(n: int) -> int:
+    return 50 + 150 * n
+
 
 @app.route("/")
 def index():
@@ -46,11 +58,14 @@ def index():
 def vocabulario():
     return jsonify(
         {
-            palavra: {
-                "energy": float(pipeline.vocab_df.loc[palavra, "energy"]),
-                "valence": float(pipeline.vocab_df.loc[palavra, "valence"]),
-            }
-            for palavra in pipeline.vocabulario
+            "moods": {
+                palavra: {
+                    "energy": float(pipeline.vocab_df.loc[palavra, "energy"]),
+                    "valence": float(pipeline.vocab_df.loc[palavra, "valence"]),
+                }
+                for palavra in pipeline.vocabulario
+            },
+            "tamanho_maximo": TAMANHO_MAXIMO,
         }
     )
 
@@ -59,28 +74,30 @@ def vocabulario():
 def preview():
     corpo = request.get_json(force=True)
     palavras = [p for p in corpo.get("palavras", []) if p in pipeline.vocabulario]
-    n = int(corpo.get("n", 20))
+    n = int(corpo.get("n", 15))
 
     if not palavras:
         return jsonify({"erro": "Escolha pelo menos 1 mood válido."}), 400
     if len(palavras) > 3:
         return jsonify({"erro": "Máximo de 3 moods por vez."}), 400
-    if not (1 <= n <= 50):
-        return jsonify({"erro": "n precisa estar entre 1 e 50."}), 400
+    if not (1 <= n <= TAMANHO_MAXIMO):
+        return jsonify({"erro": f"n precisa estar entre 1 e {TAMANHO_MAXIMO}."}), 400
 
     playlist = pipeline.gerar_playlist(palavras, n=n)
-    return jsonify({"faixas": PipelineMood.playlist_para_registros(playlist)})
+    return jsonify({"faixas": PipelineMood.playlist_para_registros(playlist), "custo_cota": custo_cota(n)})
 
 
 @app.route("/api/criar-youtube", methods=["POST"])
 def criar_youtube():
     corpo = request.get_json(force=True)
     palavras = [p for p in corpo.get("palavras", []) if p in pipeline.vocabulario]
-    n = int(corpo.get("n", 20))
+    n = int(corpo.get("n", 15))
     privacidade = corpo.get("privacidade", "unlisted")
 
     if not palavras:
         return jsonify({"erro": "Escolha pelo menos 1 mood válido."}), 400
+    if not (1 <= n <= TAMANHO_MAXIMO):
+        return jsonify({"erro": f"n precisa estar entre 1 e {TAMANHO_MAXIMO}."}), 400
     if privacidade not in ("private", "unlisted", "public"):
         return jsonify({"erro": "privacidade inválida."}), 400
 

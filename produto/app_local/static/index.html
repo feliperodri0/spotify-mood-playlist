@@ -3,172 +3,267 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Constelação de Mood — Produto Local</title>
+<title>soundpark — produto local</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 <style>
   :root {
-    --ground: #120E16;
-    --surface: #1B1521;
-    --surface-raised: #241D2A;
-    --ink: #F2EDF7;
-    --ink-dim: #9C93A8;
-    --ink-faint: #6B6478;
-    --line: #322C3A;
-    --line-soft: #241F2A;
-    --accent: #F2A65A;
-    --accent-soft: rgba(242, 166, 90, 0.14);
-    --accent-ink: #1A1109;
-    --good: #7FC49A;
-    --bad: #E28787;
+    --ground: #07090A;
+    --surface: #10140F;
+    --surface-2: #171D17;
+    --border: rgba(255,255,255,0.09);
+    --border-strong: rgba(255,255,255,0.18);
+    --text: #F2F6F1;
+    --text-dim: #9FB0A2;
+    --text-faint: #5C6A5E;
+    --accent-1: #A9F44E;
+    --accent-2: #4CC96B;
+    --accent-3: #1F8A46;
+    --accent-grad: linear-gradient(120deg, var(--accent-1), var(--accent-3));
+    --bad: #E7897C;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--ground); }
-  body { color: var(--ink); font-family: 'Manrope', -apple-system, 'Segoe UI', sans-serif; line-height: 1.5; }
-  h1, h2, h3 { font-family: 'Bricolage Grotesque', 'Manrope', sans-serif; text-wrap: balance; margin: 0; }
-  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  body { color: var(--text); font-family: 'Plus Jakarta Sans', -apple-system, 'Segoe UI', sans-serif; line-height: 1.5; overflow-x: hidden; }
+  h1, h2, h3 { font-family: 'Baloo 2', 'Plus Jakarta Sans', sans-serif; text-wrap: balance; margin: 0; }
+  .num { font-variant-numeric: tabular-nums; }
   img { max-width: 100%; }
+  a { color: var(--accent-1); }
+  a:hover { color: var(--accent-2); }
 
-  .page { max-width: 1180px; margin: 0 auto; padding: 40px 32px 80px; display: flex; flex-direction: column; gap: 32px; }
+  .page { max-width: 1180px; margin: 0 auto; padding: 40px 32px 80px; display: flex; flex-direction: column; gap: 30px; position: relative; }
 
-  header.hero { display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line-soft); padding-bottom: 24px; }
-  .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
-  header.hero h1 { font-size: clamp(28px, 4vw, 42px); font-weight: 600; }
-  header.hero p { max-width: 68ch; color: var(--ink-dim); font-size: 14.5px; margin: 0; }
-  .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--good); margin-right: 6px; }
-
-  .layout { display: grid; grid-template-columns: minmax(360px, 460px) 1fr; gap: 28px; align-items: start; }
-  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
-
-  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
-  .panel h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
-  .panel .hint { color: var(--ink-dim); font-size: 13px; margin: 0 0 16px; }
-
-  svg.plot { width: 100%; height: auto; display: block; overflow: visible; }
-  .axis-line { stroke: var(--line); stroke-width: 1; }
-  .axis-label { fill: var(--ink-faint); font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
-  .quadrant-label { fill: var(--ink-faint); font-size: 9.5px; font-style: italic; opacity: 0.55; }
-  .connector { stroke: var(--accent); stroke-width: 1.4; stroke-dasharray: 3 4; opacity: 0.55; fill: none; pointer-events: none; }
-  .target-marker { fill: none; stroke: var(--accent); stroke-width: 1.2; opacity: 0.8; pointer-events: none; }
-  .node-group { cursor: pointer; }
-  .node-halo { fill: var(--accent-soft); opacity: 0; transition: opacity 0.18s ease; }
-  .node-group:hover .node-halo, .node-group.selected .node-halo { opacity: 1; }
-  .node-dot { fill: var(--surface-raised); stroke: var(--ink-faint); stroke-width: 1.4; transition: fill 0.18s ease, stroke 0.18s ease; }
-  .node-group:hover .node-dot { stroke: var(--ink-dim); }
-  .node-group.selected .node-dot { fill: var(--accent); stroke: var(--accent); }
-  .node-label { fill: var(--ink-dim); font-size: 12.5px; font-weight: 500; pointer-events: none; transition: fill 0.18s ease; }
-  .node-group.selected .node-label { fill: var(--ink); font-weight: 700; }
-  .node-order { fill: var(--accent-ink); font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; text-anchor: middle; pointer-events: none; opacity: 0; transition: opacity 0.18s ease; }
-  .node-group.selected .node-order { opacity: 1; }
-  .overlap-note { margin-top: 12px; font-size: 11.5px; color: var(--ink-faint); border-top: 1px dashed var(--line); padding-top: 10px; }
-
-  .selection-row { display: flex; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-raised); border: 1px solid var(--line); color: var(--ink); padding: 5px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
-  .chip .n { font-family: 'JetBrains Mono', monospace; color: var(--accent); font-size: 11px; }
-  .placeholder-chip { color: var(--ink-faint); font-size: 12.5px; font-style: italic; }
-
-  .size-row { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
-  .size-row label { font-size: 12.5px; color: var(--ink-dim); }
-  .size-row input[type="number"] {
-    width: 64px; background: var(--surface-raised); border: 1px solid var(--line); color: var(--ink);
-    border-radius: 7px; padding: 5px 8px; font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  .glow {
+    position: absolute; top: -160px; left: 50%; width: 720px; height: 420px; margin-left: -360px;
+    background: radial-gradient(closest-side, rgba(169,244,78,0.14), transparent 70%);
+    filter: blur(10px); pointer-events: none; z-index: 0;
+    animation: drift 14s ease-in-out infinite alternate;
   }
+  @keyframes drift { from { transform: translate(-40px, 0) scale(1); } to { transform: translate(40px, 20px) scale(1.08); } }
 
-  button { font-family: 'Manrope', sans-serif; cursor: pointer; border: none; }
+  /* ---- Masthead: ícone (PNG recortado, fundo transparente de verdade) +
+     wordmark nativo em HTML/CSS — nada de imagem retangular colada sobre o
+     fundo da página. ---- */
+  .masthead {
+    position: relative; z-index: 1; display: flex; align-items: center;
+    gap: 16px; padding-bottom: 18px;
+  }
+  .brand-lockup { display: flex; align-items: center; gap: 9px; }
+  .brand-lockup img { width: 30px; height: 30px; display: block; filter: drop-shadow(0 0 10px rgba(169,244,78,0.25)); }
+  .wordmark { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 20px; letter-spacing: -0.01em; line-height: 1; }
+  .wordmark .sound { color: var(--text); }
+  .wordmark .park { background: var(--accent-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  /* ---- Hero: o vinil (WebGL, three.js) como centro visual ---- */
+  header.hero {
+    position: relative; z-index: 1; padding: 8px 0 34px; border-bottom: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; overflow: hidden;
+  }
+  .vinyl-hero { position: relative; width: 260px; height: 260px; margin-bottom: 4px; }
+  .vinyl-hero canvas { display: block; width: 100%; height: 100%; }
+  @media (max-width: 640px) { .vinyl-hero { width: 190px; height: 190px; } }
+  .hero-headline {
+    font-size: clamp(26px, 4vw, 38px); font-weight: 800; max-width: 20ch; text-wrap: balance;
+  }
+  .hero-headline .hot { background: var(--accent-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .status-pill {
+    align-self: center; display: inline-flex; align-items: center; gap: 7px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+    padding: 5px 12px 5px 9px; font-size: 12px; font-weight: 600; color: var(--text-dim); margin-top: 10px;
+  }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-1); box-shadow: 0 0 8px var(--accent-1); animation: pulse-dot 2s ease-in-out infinite; }
+  @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .tagline { font-size: 14.5px; color: var(--text-dim); max-width: 52ch; margin: 4px 0 0; }
+  .tagline b { color: var(--accent-1); font-weight: 700; }
+
+  .layout { display: grid; grid-template-columns: minmax(380px, 480px) 1fr; gap: 24px; align-items: start; position: relative; z-index: 1; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 24px; }
+  .panel h2 { font-size: 19px; font-weight: 700; margin-bottom: 4px; }
+  .panel .hint { color: var(--text-dim); font-size: 13px; margin: 0 0 16px; }
+
+  /* ---- Mood tile grid ---- */
+  .mood-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  @media (min-width: 480px) and (max-width: 900px) { .mood-grid { grid-template-columns: repeat(4, 1fr); } }
+  .mood-tile {
+    position: relative; text-align: left; cursor: pointer; border: 1px solid var(--border);
+    background: var(--surface-2); border-radius: 14px; padding: 14px 12px 12px;
+    display: flex; flex-direction: column; gap: 10px; min-height: 92px;
+    opacity: 0; transform: translateY(8px);
+    transition: opacity 0.4s cubic-bezier(.2,.8,.2,1), transform 0.4s cubic-bezier(.2,.8,.2,1),
+      box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  }
+  .mood-tile.shown { opacity: 1; transform: translateY(0); }
+  .mood-tile::before {
+    content: ""; position: absolute; inset: 0; border-radius: 14px; opacity: 0.22; pointer-events: none;
+    background: radial-gradient(120% 120% at 15% 0%, var(--tile-color) 0%, transparent 62%);
+  }
+  .mood-tile.shown:hover { border-color: var(--border-strong); box-shadow: 0 10px 24px -12px rgba(0,0,0,0.5); }
+  .mood-tile.selected {
+    border-color: var(--tile-color); background: var(--surface-2);
+    box-shadow: 0 0 0 1px var(--tile-color), 0 8px 22px -10px var(--tile-color);
+  }
+  .mood-tile .icon {
+    width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+    color: var(--tile-color); background: color-mix(in oklch, var(--tile-color) 18%, transparent);
+    position: relative; z-index: 1;
+  }
+  .mood-tile .icon svg { width: 17px; height: 17px; }
+  .mood-tile .label { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 14.5px; position: relative; z-index: 1; }
+  .mood-tile .order {
+    position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--tile-color); color: #0A0F09; font-size: 11px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; opacity: 0; transform: scale(0.5);
+    transition: opacity 0.18s ease, transform 0.18s cubic-bezier(.3,1.4,.4,1); z-index: 2;
+  }
+  .mood-tile.selected .order { opacity: 1; transform: scale(1); }
+
+  .same-note { margin-top: 14px; font-size: 11.5px; color: var(--text-faint); border-top: 1px dashed var(--border); padding-top: 10px; }
+
+  .selection-row { display: flex; align-items: center; gap: 8px; margin-top: 18px; flex-wrap: wrap; min-height: 30px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border-strong);
+    color: var(--text); padding: 6px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 700;
+    animation: chip-in 0.25s cubic-bezier(.3,1.2,.4,1);
+  }
+  @keyframes chip-in { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+  .chip .n { color: var(--accent-1); font-size: 11px; }
+  .placeholder-chip { color: var(--text-faint); font-size: 12.5px; font-style: italic; }
+
+  /* ---- Blend gauge (mostra o alvo real que o algoritmo calcula) ---- */
+  .gauge-block { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .gauge-row { display: flex; align-items: center; gap: 10px; }
+  .gauge-row .gauge-label { font-size: 11px; font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; width: 64px; flex: none; }
+  .gauge-track { flex: 1; height: 7px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+  .gauge-fill { height: 100%; border-radius: 999px; width: 0%; transition: width 0.45s cubic-bezier(.2,.8,.2,1), background 0.3s ease; }
+
+  .size-block { margin-top: 18px; }
+  .size-block label { font-size: 12px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  .size-stepper { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .size-pill {
+    flex: 1 1 auto; min-width: 42px; text-align: center; padding: 9px 4px; border-radius: 10px;
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text-dim);
+    font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; font-size: 13.5px; cursor: pointer;
+    transition: transform 0.12s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  .size-pill:hover { border-color: var(--border-strong); color: var(--text); }
+  .size-pill:active { transform: scale(0.96); }
+  .size-pill.selected { background: var(--accent-grad); border-color: transparent; color: #06210F; }
+  .quota-readout { margin-top: 10px; font-size: 11.5px; color: var(--text-faint); display: flex; justify-content: space-between; }
+  .quota-readout b { color: var(--text-dim); font-weight: 700; }
+
+  button { font-family: 'Plus Jakarta Sans', sans-serif; cursor: pointer; border: none; }
   button.primary {
-    margin-top: 16px; width: 100%; background: var(--accent); color: var(--accent-ink);
-    border-radius: 10px; padding: 12px 18px; font-size: 14.5px; font-weight: 700;
-    transition: filter 0.15s ease;
+    margin-top: 18px; width: 100%; background: var(--accent-grad); color: #06210F;
+    border-radius: 12px; padding: 13px 18px; font-size: 14.5px; font-weight: 800;
+    transition: filter 0.15s ease, transform 0.1s ease;
   }
-  button.primary:hover:not(:disabled) { filter: brightness(1.08); }
-  button.primary:disabled { background: var(--surface-raised); color: var(--ink-faint); cursor: not-allowed; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.06); }
+  button.primary:active:not(:disabled) { transform: scale(0.99); }
+  button.primary:disabled { background: var(--surface-2); color: var(--text-faint); cursor: not-allowed; }
 
   button.youtube {
-    margin-top: 12px; width: 100%; background: transparent; color: var(--accent);
-    border: 1px solid var(--accent); border-radius: 10px; padding: 11px 18px; font-size: 13.5px; font-weight: 700;
+    margin-top: 12px; width: 100%; background: transparent; color: var(--accent-1);
+    border: 1.5px solid var(--accent-3); border-radius: 12px; padding: 12px 18px; font-size: 13.5px; font-weight: 700;
+    transition: background 0.15s ease, transform 0.1s ease;
   }
-  button.youtube:hover:not(:disabled) { background: var(--accent-soft); }
-  button.youtube:disabled { border-color: var(--line); color: var(--ink-faint); cursor: not-allowed; }
+  button.youtube:hover:not(:disabled) { background: rgba(76,201,107,0.1); }
+  button.youtube:active:not(:disabled) { transform: scale(0.99); }
+  button.youtube:disabled { border-color: var(--border); color: var(--text-faint); cursor: not-allowed; }
 
   select.privacidade {
-    margin-top: 10px; width: 100%; background: var(--surface-raised); border: 1px solid var(--line);
-    color: var(--ink); border-radius: 8px; padding: 8px 10px; font-family: 'Manrope', sans-serif; font-size: 13px;
+    margin-top: 10px; width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 10px; padding: 9px 10px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px;
   }
 
   .result-panel { min-height: 380px; display: flex; flex-direction: column; }
-  .result-empty { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--ink-faint); font-size: 13.5px; padding: 30px 20px; border: 1px dashed var(--line); border-radius: 10px; }
+  .result-empty { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--text-faint); font-size: 13.5px; padding: 30px 20px; border: 1px dashed var(--border); border-radius: 12px; }
   .result-header { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
-  .result-header .combo { font-size: 14.5px; font-weight: 700; }
-  .result-header .combo .n { color: var(--accent); }
-  .result-header .meta { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--ink-dim); }
+  .result-header .combo { font-size: 15px; font-weight: 800; }
+  .result-header .combo .n { color: var(--accent-1); }
+  .result-header .meta { font-size: 11.5px; color: var(--text-dim); }
 
-  .youtube-box { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
-  .youtube-box a { color: var(--accent); font-weight: 700; word-break: break-all; }
+  .youtube-box { background: rgba(76,201,107,0.1); border: 1px solid var(--accent-3); border-radius: 12px; padding: 13px 15px; margin-bottom: 16px; animation: chip-in 0.3s cubic-bezier(.2,.8,.2,1); }
+  .youtube-box a { font-weight: 700; word-break: break-all; }
   .youtube-box .aviso { color: var(--bad); font-size: 12px; margin-top: 6px; }
 
-  .track-row { display: grid; grid-template-columns: 24px 1fr auto auto; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 8px; }
-  .track-row:hover { background: var(--surface-raised); }
-  .track-idx { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--ink-faint); }
+  .track-row {
+    display: grid; grid-template-columns: 26px 1fr auto auto; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 10px;
+    opacity: 0; transform: translateX(-6px);
+    transition: opacity 0.35s cubic-bezier(.2,.8,.2,1), transform 0.35s cubic-bezier(.2,.8,.2,1), background 0.15s ease;
+  }
+  .track-row.shown { opacity: 1; transform: translateX(0); }
+  .track-row:hover { background: var(--surface-2); }
+  .track-idx { font-size: 11.5px; font-weight: 700; color: var(--text-faint); }
   .track-info { min-width: 0; }
-  .track-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13.5px; max-width: 100%; }
+  .track-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13.5px; max-width: 100%; }
   .track-name .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .track-name a.listen { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; color: var(--ink-faint); text-decoration: none; border: 1px solid var(--line); font-size: 9px; }
-  .track-name a.listen:hover { color: var(--accent); border-color: var(--accent); }
-  .track-sub { font-size: 11.5px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .track-sub .genre { color: var(--ink-faint); }
+  .track-name a.listen { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; border-radius: 50%; color: var(--text-faint); text-decoration: none; border: 1px solid var(--border-strong); font-size: 9px; }
+  .track-name a.listen:hover { color: var(--accent-1); border-color: var(--accent-1); }
+  .track-sub { font-size: 11.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-sub .genre { color: var(--text-faint); }
   .track-sub .genre::before { content: "· "; }
   .badges { display: flex; gap: 6px; }
-  .badge { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; padding: 3px 7px; border-radius: 6px; border: 1px solid var(--line); color: var(--ink-dim); white-space: nowrap; }
-  .badge.bpm { color: var(--ink); }
-  .badge.camelot { color: var(--accent); }
+  .badge { font-size: 10.5px; font-weight: 700; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); white-space: nowrap; }
+  .badge.bpm { color: var(--text); }
+  .badge.camelot { color: var(--accent-1); border-color: var(--accent-3); }
 
-  .transition { display: grid; grid-template-columns: 24px 1fr; gap: 12px; padding: 1px 8px; }
-  .transition .line { grid-column: 1/-1; display: flex; align-items: center; gap: 8px; padding-left: 24px; }
-  .transition .stem { width: 1px; height: 12px; background: var(--line); margin-left: 11.5px; }
-  .transition .delta { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink-faint); }
-  .transition .delta.smooth { color: var(--good); }
+  .transition { display: grid; grid-template-columns: 26px 1fr; gap: 12px; padding: 1px 8px; }
+  .transition .line { grid-column: 1/-1; display: flex; align-items: center; gap: 8px; padding-left: 26px; }
+  .transition .stem { width: 1px; height: 12px; background: var(--border-strong); margin-left: 12.5px; }
+  .transition .delta { font-size: 10px; font-weight: 700; color: var(--text-faint); }
+  .transition .delta.smooth { color: var(--accent-2); }
 
-  footer.note { border-top: 1px solid var(--line-soft); padding-top: 18px; color: var(--ink-faint); font-size: 12px; max-width: 82ch; }
-  footer.note strong { color: var(--ink-dim); }
-  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent-ink); border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: -1px; }
+  footer.note { border-top: 1px solid var(--border); padding-top: 18px; color: var(--text-faint); font-size: 12px; max-width: 82ch; position: relative; z-index: 1; }
+  footer.note strong { color: var(--text-dim); }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #06210F; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: -1px; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 <div class="page">
+  <div class="glow"></div>
+
+  <div class="masthead">
+    <div class="brand-lockup">
+      <img src="icon-mark.png" alt="" aria-hidden="true">
+      <span class="wordmark"><span class="sound">sound</span><span class="park">park</span></span>
+    </div>
+  </div>
+
   <header class="hero">
-    <div class="eyebrow"><span class="status-dot"></span>Produto local — rodando em localhost:5001</div>
-    <h1>Constelação de Mood</h1>
-    <p>Escolha até 3 pontos no mapa de energia × valência. A playlist é gerada ao vivo pelo backend Flask local (Fases 2-3), e pode virar uma playlist de verdade no YouTube, usando o login já autenticado nesta máquina.</p>
+    <div class="vinyl-hero" id="vinyl-hero" aria-hidden="true"></div>
+    <h1 class="hero-headline">Playlists automáticas, feitas <span class="hot">pra você</span></h1>
+    <p class="tagline">Escolha até 3 climas, a gente sequencia por transição suave e cria a playlist de verdade no <b>YouTube</b>.</p>
   </header>
 
   <div class="layout">
     <section class="panel">
-      <h2>Mapa de mood</h2>
-      <p class="hint">Eixo horizontal: valência (triste → feliz). Eixo vertical: energia (calmo → intenso).</p>
-      <div class="plot-wrap">
-        <svg class="plot" viewBox="0 0 400 400" role="img" aria-label="Mapa de mood por energia e valência">
-          <line class="axis-line" x1="50" y1="350" x2="350" y2="350"></line>
-          <line class="axis-line" x1="50" y1="50" x2="50" y2="350"></line>
-          <text class="axis-label" x="200" y="378" text-anchor="middle">valência →</text>
-          <text class="axis-label" x="26" y="200" text-anchor="middle" transform="rotate(-90 26 200)">energia →</text>
-          <text class="quadrant-label" x="345" y="65" text-anchor="end">intenso · feliz</text>
-          <text class="quadrant-label" x="55" y="65" text-anchor="start">intenso · triste</text>
-          <text class="quadrant-label" x="345" y="340" text-anchor="end">calmo · feliz</text>
-          <text class="quadrant-label" x="55" y="340" text-anchor="start">calmo · triste</text>
-          <path id="target-path" class="connector" d=""></path>
-          <circle id="target-marker" class="target-marker" cx="0" cy="0" r="0"></circle>
-          <g id="nodes"></g>
-        </svg>
+      <h2>Escolha o clima</h2>
+      <p class="hint">Toque em até 3. A cor de cada card reflete a energia e a valência médias das faixas daquele clima.</p>
+
+      <div class="mood-grid" id="mood-grid"></div>
+
+      <p class="same-note">"Calmo" e "Acústico" têm exatamente a mesma energia/valência médias — por isso a mesma cor. O que os diferencia de verdade é o quanto a faixa é acústica, um eixo que não aparece aqui.</p>
+
+      <div class="selection-row" id="selection-row"><span class="placeholder-chip">Nenhum clima selecionado ainda</span></div>
+
+      <div class="gauge-block" id="gauge-block">
+        <div class="gauge-row"><span class="gauge-label">Energia</span><div class="gauge-track"><div class="gauge-fill" id="gauge-energy"></div></div></div>
+        <div class="gauge-row"><span class="gauge-label">Valência</span><div class="gauge-track"><div class="gauge-fill" id="gauge-valence"></div></div></div>
       </div>
-      <p class="overlap-note">"Calmo" e "Acústico" caem no mesmo ponto de energia/valência — diferem só em <span class="mono">acousticness</span>, eixo que este mapa 2D não mostra.</p>
 
-      <div class="selection-row" id="selection-row"><span class="placeholder-chip">Nenhum mood selecionado ainda</span></div>
-
-      <div class="size-row">
-        <label for="tamanho">Faixas na playlist:</label>
-        <input type="number" id="tamanho" value="20" min="1" max="50">
+      <div class="size-block">
+        <label>Faixas na playlist</label>
+        <div class="size-stepper" id="size-stepper"></div>
+        <div class="quota-readout">
+          <span>custo estimado no YouTube</span>
+          <b id="quota-cost">—</b>
+        </div>
       </div>
 
       <button class="primary" id="preview-btn" disabled>Pré-visualizar (grátis)</button>
@@ -182,44 +277,267 @@
     </section>
 
     <section class="panel result-panel">
-      <h2>Playlist</h2>
+      <h2>Sua playlist</h2>
       <p class="hint" id="result-hint">Gere uma pré-visualização primeiro — não gasta cota da API.</p>
-      <div id="result-area"><div class="result-empty">Selecione 1 a 3 moods e clique em "Pré-visualizar".</div></div>
+      <div id="result-area"><div class="result-empty">Selecione 1 a 3 climas e clique em "Pré-visualizar".</div></div>
     </section>
   </div>
 
   <footer class="note">
-    <strong>Sobre este protótipo:</strong> roda 100% local — o backend Flask carrega o catálogo real (113.549 faixas) e os artefatos das Fases 2-3 uma vez, na inicialização. "Pré-visualizar" gera a sequência sem custo de API. "Criar no YouTube" resolve cada faixa via busca (100 unidades de cota cada) e cria a playlist de verdade na conta autenticada — evite clicar repetidas vezes sem necessidade, a cota diária é limitada.
+    <strong>Sobre este protótipo:</strong> roda 100% local — o backend Flask carrega o catálogo real (113.549 faixas) e os artefatos das Fases 2-3 uma vez, na inicialização. "Pré-visualizar" gera a sequência sem custo de API. "Criar no YouTube" resolve cada faixa por busca e cria a playlist de verdade na conta autenticada (YouTube Data API v3). O disco no topo é WebGL de verdade (<code>three.js</code>) e a seleção de clima usa <code>GSAP</code> — as duas bibliotecas carregadas via CDN. <strong>Limite de 30 faixas por playlist:</strong> cada faixa custa 150 unidades de cota (100 de busca + 50 de inserção) além de 50 fixas para criar a playlist — em 30 faixas isso já soma 4.550 das 10.000 unidades gratuitas por dia, deixando margem para mais de uma geração no mesmo dia sem estourar a cota.
   </footer>
 </div>
 
 <script>
+  // ---- Vinil giratório do header (three.js) --------------------------------
+  // Peça decorativa e independente: se o three.js não carregar ou o WebGL
+  // não estiver disponível, a função simplesmente não faz nada (sem erro).
+  (function initVinylHero() {
+    try {
+      var container = document.getElementById('vinyl-hero');
+      if (!container || typeof THREE === 'undefined') return;
+
+      var renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      } catch (e) {
+        return;
+      }
+      if (!renderer || !renderer.getContext()) return;
+
+      renderer.setClearColor(0x000000, 0);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      container.appendChild(renderer.domElement);
+
+      var scene = new THREE.Scene();
+      var camera = new THREE.PerspectiveCamera(42, 1, 0.1, 50);
+      camera.position.set(0, 3.3, 4.6);
+      camera.lookAt(0, 0.05, 0);
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+
+      var keyLight = new THREE.DirectionalLight(0xfff3e0, 1.9);
+      keyLight.position.set(2.3, 3.8, 2.4);
+      scene.add(keyLight);
+
+      var rimLight = new THREE.DirectionalLight(0x9dff6a, 2.4);
+      rimLight.position.set(-2.8, 1.6, -2.2);
+      scene.add(rimLight);
+
+      var fillLight = new THREE.PointLight(0x4cc96b, 1.1, 12);
+      fillLight.position.set(0, -1.4, 2.4);
+      scene.add(fillLight);
+
+      function buildGrooveCanvas(size) {
+        var c = document.createElement('canvas');
+        c.width = c.height = size;
+        var ctx = c.getContext('2d');
+        ctx.fillStyle = '#1a1e1c';
+        ctx.fillRect(0, 0, size, size);
+        var cx = size / 2, cy = size / 2, maxR = size / 2;
+        for (var r = maxR; r > maxR * 0.2; r -= 1.4) {
+          var tone = 26 + Math.round(Math.random() * 14);
+          ctx.strokeStyle = 'rgba(' + (tone + 14) + ',' + (tone + 18) + ',' + (tone + 14) + ',0.6)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(140,240,106,0.55)';
+        ctx.lineWidth = size * 0.012;
+        ctx.beginPath();
+        ctx.arc(cx, cy, maxR - ctx.lineWidth, 0, Math.PI * 2);
+        ctx.stroke();
+        var sheen = ctx.createRadialGradient(cx, cy, maxR * 0.15, cx, cy, maxR);
+        sheen.addColorStop(0, 'rgba(255,255,255,0.09)');
+        sheen.addColorStop(0.55, 'rgba(255,255,255,0)');
+        sheen.addColorStop(1, 'rgba(255,255,255,0.1)');
+        ctx.fillStyle = sheen;
+        ctx.beginPath();
+        ctx.arc(cx, cy, maxR, 0, Math.PI * 2);
+        ctx.fill();
+        return c;
+      }
+
+      var grooveTexture = new THREE.CanvasTexture(buildGrooveCanvas(512));
+      grooveTexture.colorSpace = THREE.SRGBColorSpace;
+
+      function buildLabelCanvas(size) {
+        var c = document.createElement('canvas');
+        c.width = c.height = size;
+        var ctx = c.getContext('2d');
+        var cx = size / 2, cy = size / 2, r = size / 2;
+        var grad = ctx.createLinearGradient(0, 0, size, size);
+        grad.addColorStop(0, '#A9F44E');
+        grad.addColorStop(1, '#1F8A46');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = size * 0.01;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = '#08090a';
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.07, 0, Math.PI * 2);
+        ctx.fill();
+        return c;
+      }
+
+      var labelTexture = new THREE.CanvasTexture(buildLabelCanvas(256));
+      labelTexture.colorSpace = THREE.SRGBColorSpace;
+
+      var DISC_RADIUS = 1.5, DISC_HEIGHT = 0.05;
+      var vinylMat = new THREE.MeshStandardMaterial({ color: 0x1c211f, roughness: 0.5, metalness: 0.12 });
+      var grooveMat = new THREE.MeshStandardMaterial({ map: grooveTexture, color: 0xffffff, roughness: 0.42, metalness: 0.12 });
+
+      var discGeo = new THREE.CylinderGeometry(DISC_RADIUS, DISC_RADIUS, DISC_HEIGHT, 96, 1);
+      var disc = new THREE.Mesh(discGeo, [vinylMat, grooveMat, grooveMat]);
+
+      var spinGroup = new THREE.Group();
+      spinGroup.add(disc);
+
+      var labelGeo = new THREE.CylinderGeometry(DISC_RADIUS * 0.33, DISC_RADIUS * 0.33, DISC_HEIGHT * 0.4, 48, 1);
+      var labelMat = new THREE.MeshStandardMaterial({ map: labelTexture, roughness: 0.5, metalness: 0.05 });
+      var label = new THREE.Mesh(labelGeo, labelMat);
+      label.position.y = DISC_HEIGHT / 2 + DISC_HEIGHT * 0.2;
+      spinGroup.add(label);
+
+      scene.add(spinGroup);
+
+      var armMetal = new THREE.MeshStandardMaterial({ color: 0x1c211d, roughness: 0.35, metalness: 0.75 });
+      var armAccent = new THREE.MeshStandardMaterial({ color: 0x4cc96b, roughness: 0.4, metalness: 0.5 });
+
+      var tonearm = new THREE.Group();
+
+      var pivotAngle = -14 * Math.PI / 180;
+      var PIVOT = new THREE.Vector3(
+        DISC_RADIUS * 1.27 * Math.cos(pivotAngle),
+        0.4,
+        DISC_RADIUS * 1.27 * Math.sin(pivotAngle)
+      );
+      var restAngle = -48 * Math.PI / 180;
+      var REST_POINT = new THREE.Vector3(
+        DISC_RADIUS * 0.96 * Math.cos(restAngle),
+        DISC_HEIGHT / 2 + 0.02,
+        DISC_RADIUS * 0.96 * Math.sin(restAngle)
+      );
+
+      var pivotPost = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.075, PIVOT.y, 16), armMetal);
+      pivotPost.position.set(PIVOT.x, PIVOT.y / 2, PIVOT.z);
+      tonearm.add(pivotPost);
+
+      var pivotCap = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.055, 20), armAccent);
+      pivotCap.position.copy(PIVOT);
+      tonearm.add(pivotCap);
+
+      var armPivot = new THREE.Object3D();
+      armPivot.position.copy(PIVOT);
+      tonearm.add(armPivot);
+
+      var dx = REST_POINT.x - PIVOT.x;
+      var dz = REST_POINT.z - PIVOT.z;
+      var armLength = Math.hypot(dx, dz);
+      var armDir = new THREE.Group();
+      armDir.rotation.y = Math.atan2(-dz, dx);
+      armPivot.add(armDir);
+
+      var arm = new THREE.Mesh(new THREE.BoxGeometry(armLength, 0.04, 0.05), armMetal);
+      arm.position.set(armLength / 2, 0, 0);
+      armDir.add(arm);
+
+      var counterweight = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.15, 16), armMetal);
+      counterweight.rotation.z = Math.PI / 2;
+      counterweight.position.set(-0.14, 0, 0);
+      armDir.add(counterweight);
+
+      var headshell = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.045, 0.09), armAccent);
+      headshell.position.set(armLength - 0.02, -0.01, 0);
+      armDir.add(headshell);
+
+      scene.add(tonearm);
+
+      function resize() {
+        var w = container.clientWidth || 320;
+        var h = container.clientHeight || 320;
+        if (w === 0 || h === 0) return;
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      }
+
+      if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(resize).observe(container);
+      }
+      window.addEventListener('resize', resize);
+      resize();
+
+      var clock = new THREE.Clock();
+      var ROTATION_SPEED = (Math.PI * 2) / 9;
+
+      function animate() {
+        requestAnimationFrame(animate);
+        var dt = clock.getDelta();
+        spinGroup.rotation.y += dt * ROTATION_SPEED;
+        renderer.render(scene, camera);
+      }
+      animate();
+    } catch (e) {
+      // Peça decorativa: qualquer falha inesperada é ignorada silenciosamente.
+    }
+  })();
+</script>
+<script>
+  // Ícones de traço simples, um por clima (24x24, currentColor).
+  const ICONS = {
+    Energetico: '<path d="M13 2 5 13h6l-1 9 9-11h-6l0-9Z"/>',
+    Feliz: '<circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/><g stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></g>',
+    Dancante: '<circle cx="7" cy="17.5" r="2.3" fill="currentColor" stroke="none"/><circle cx="16" cy="15.2" r="2.3" fill="currentColor" stroke="none"/><path d="M9.3 17.5V6.3l9-1.8v10.7" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+    Calmo: '<g stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M2 9c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 15.5c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/></g>',
+    Melancolico: '<path d="M12 3c3.4 4.1 6 7.6 6 10.4a6 6 0 1 1-12 0C6 10.6 8.6 7.1 12 3Z"/>',
+    Intenso: '<path d="M12 22c4 0 7-3 7-7 0-3.6-2.6-5.6-3.8-8.4-.7 1.6-.8 3-2.2 3-1 0-1.7-.9-1.7-2.4C8.6 9 6.5 11.4 6.5 15c0 3.9 3.1 7 5.5 7Z"/>',
+    Instrumental: '<g><rect x="4" y="10.5" width="3.2" height="9" rx="1.2"/><rect x="10.4" y="4.5" width="3.2" height="15" rx="1.2"/><rect x="16.8" y="8" width="3.2" height="11.5" rx="1.2"/></g>',
+    Acustico: '<path d="M4 20C4 10.5 11.7 4.5 20 4c0 8.2-5.9 16-16 16Z"/><path d="M6.3 17.8C10 14 14 10 18.7 5.4" stroke="#0A0F09" stroke-opacity="0.35" stroke-width="1.4" fill="none" stroke-linecap="round"/>',
+  };
   const MOOD_LABELS = {
     Energetico: "Energético", Feliz: "Feliz", Dancante: "Dançante", Calmo: "Calmo",
     Melancolico: "Melancólico", Intenso: "Intenso", Instrumental: "Instrumental", Acustico: "Acústico",
   };
-  const NUDGES = { Calmo: [-16, -10], Acustico: [16, 10] };
+  const ORDER = ["Energetico", "Feliz", "Dancante", "Calmo", "Melancolico", "Intenso", "Instrumental", "Acustico"];
+  const V_MIN = 0.127, V_MAX = 0.84, E_MIN = 0.240, E_MAX = 0.941;
 
-  const svgNS = "http://www.w3.org/2000/svg";
-  const nodesG = document.getElementById("nodes");
+  function tileColor(energy, valence) {
+    const t = Math.min(1, Math.max(0, (valence - V_MIN) / (V_MAX - V_MIN)));
+    const s = Math.min(1, Math.max(0, (energy - E_MIN) / (E_MAX - E_MIN)));
+    const hue = (300 - 205 * t + 360) % 360;
+    const L = 34 + 20 * s, C = 0.11 + 0.08 * s;
+    return `oklch(${L}% ${C.toFixed(3)} ${hue.toFixed(1)})`;
+  }
+
+  const TAMANHOS = [5, 10, 15, 20, 25, 30];
+  const CUSTO_FIXO = 50, CUSTO_POR_FAIXA = 150;
+
+  const grid = document.getElementById("mood-grid");
   const selectionRow = document.getElementById("selection-row");
+  const gaugeEnergy = document.getElementById("gauge-energy");
+  const gaugeValence = document.getElementById("gauge-valence");
   const previewBtn = document.getElementById("preview-btn");
   const youtubeBtn = document.getElementById("youtube-btn");
   const resultArea = document.getElementById("result-area");
   const resultHint = document.getElementById("result-hint");
-  const targetPath = document.getElementById("target-path");
-  const targetMarker = document.getElementById("target-marker");
-  const tamanhoInput = document.getElementById("tamanho");
+  const stepperEl = document.getElementById("size-stepper");
+  const quotaCostEl = document.getElementById("quota-cost");
   const privacidadeSelect = document.getElementById("privacidade");
 
+  const hasGsap = typeof gsap !== "undefined";
   let selected = [];
   let vocabMeta = {};
+  let tamanho = 15;
   let ultimaPreview = null;
-  const nodeEls = {};
-
-  function toXY(energy, valence) {
-    return { x: 50 + valence * 300, y: 350 - energy * 300 };
-  }
+  const tileEls = {};
 
   function linkYoutube(nome, artista) {
     return "https://www.youtube.com/results?search_query=" + encodeURIComponent(nome + " " + artista);
@@ -230,62 +548,58 @@
   }
 
   async function iniciar() {
+    montarStepper();
     const resp = await fetch("/api/vocabulario");
-    const vocab = await resp.json();
-    Object.keys(vocab).forEach((key) => {
-      vocabMeta[key] = { label: MOOD_LABELS[key] || key, energy: vocab[key].energy, valence: vocab[key].valence, nudge: NUDGES[key] };
+    const data = await resp.json();
+    Object.keys(data.moods).forEach((key) => {
+      vocabMeta[key] = { energy: data.moods[key].energy, valence: data.moods[key].valence };
     });
-    desenharMapa();
+    montarGrid();
   }
 
-  function desenharMapa() {
-    Object.keys(vocabMeta).forEach((key) => {
+  function montarGrid() {
+    ORDER.forEach((key, i) => {
       const meta = vocabMeta[key];
-      let { x, y } = toXY(meta.energy, meta.valence);
-      if (meta.nudge) { x += meta.nudge[0]; y += meta.nudge[1]; }
-
-      const g = document.createElementNS(svgNS, "g");
-      g.setAttribute("class", "node-group");
-      g.setAttribute("tabindex", "0");
-      g.setAttribute("role", "button");
-      g.setAttribute("aria-pressed", "false");
-      g.setAttribute("aria-label", meta.label);
-
-      const halo = document.createElementNS(svgNS, "circle");
-      halo.setAttribute("class", "node-halo"); halo.setAttribute("cx", x); halo.setAttribute("cy", y); halo.setAttribute("r", 20);
-      g.appendChild(halo);
-
-      const dot = document.createElementNS(svgNS, "circle");
-      dot.setAttribute("class", "node-dot"); dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("r", 9);
-      g.appendChild(dot);
-
-      const order = document.createElementNS(svgNS, "text");
-      order.setAttribute("class", "node-order"); order.setAttribute("x", x); order.setAttribute("y", y + 3.5);
-      g.appendChild(order);
-
-      const label = document.createElementNS(svgNS, "text");
-      label.setAttribute("class", "node-label");
-      const dx = meta.valence > 0.6 ? -12 : 14;
-      label.setAttribute("x", x + dx); label.setAttribute("y", y + 4);
-      label.setAttribute("text-anchor", meta.valence > 0.6 ? "end" : "start");
-      label.textContent = meta.label;
-      g.appendChild(label);
-
-      if (meta.nudge) {
-        const t = toXY(meta.energy, meta.valence);
-        const dashed = document.createElementNS(svgNS, "line");
-        dashed.setAttribute("x1", t.x); dashed.setAttribute("y1", t.y);
-        dashed.setAttribute("x2", x); dashed.setAttribute("y2", y);
-        dashed.setAttribute("stroke", "var(--line)"); dashed.setAttribute("stroke-width", "1"); dashed.setAttribute("stroke-dasharray", "2 3");
-        nodesG.appendChild(dashed);
-      }
-
-      g.addEventListener("click", () => toggle(key));
-      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(key); } });
-
-      nodesG.appendChild(g);
-      nodeEls[key] = { g, order, x, y };
+      if (!meta) return;
+      const color = tileColor(meta.energy, meta.valence);
+      const el = document.createElement("div");
+      el.className = "mood-tile";
+      el.style.setProperty("--tile-color", color);
+      el.setAttribute("role", "button");
+      el.setAttribute("tabindex", "0");
+      el.setAttribute("aria-pressed", "false");
+      el.setAttribute("aria-label", MOOD_LABELS[key]);
+      el.innerHTML = `
+        <span class="order"></span>
+        <span class="icon"><svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0">${ICONS[key]}</svg></span>
+        <span class="label">${MOOD_LABELS[key]}</span>`;
+      el.addEventListener("click", () => toggle(key));
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(key); } });
+      grid.appendChild(el);
+      tileEls[key] = el;
+      setTimeout(() => el.classList.add("shown"), 30 + i * 45);
     });
+  }
+
+  function montarStepper() {
+    TAMANHOS.forEach((n) => {
+      const el = document.createElement("div");
+      el.className = "size-pill" + (n === tamanho ? " selected" : "");
+      el.textContent = n;
+      el.setAttribute("role", "button");
+      el.setAttribute("tabindex", "0");
+      el.addEventListener("click", () => { tamanho = n; atualizarStepper(); });
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tamanho = n; atualizarStepper(); } });
+      stepperEl.appendChild(el);
+    });
+    atualizarStepper();
+  }
+
+  function atualizarStepper() {
+    [...stepperEl.children].forEach((el) => el.classList.toggle("selected", Number(el.textContent) === tamanho));
+    quotaCostEl.textContent = (CUSTO_FIXO + CUSTO_POR_FAIXA * tamanho).toLocaleString("pt-BR") + " / 10.000 unid.";
+    youtubeBtn.disabled = true;
+    ultimaPreview = null;
   }
 
   function toggle(key) {
@@ -293,28 +607,35 @@
     if (idx >= 0) selected.splice(idx, 1);
     else { if (selected.length >= 3) return; selected.push(key); }
     render();
+    if (hasGsap) {
+      const el = tileEls[key];
+      gsap.fromTo(el, { scale: 1 }, { scale: 1.06, duration: 0.12, yoyo: true, repeat: 1, ease: "power2.out" });
+    }
   }
 
   function render() {
-    Object.keys(nodeEls).forEach((key) => {
-      const { g, order } = nodeEls[key];
+    ORDER.forEach((key) => {
+      const el = tileEls[key];
+      if (!el) return;
       const pos = selected.indexOf(key);
-      g.classList.toggle("selected", pos >= 0);
-      g.setAttribute("aria-pressed", String(pos >= 0));
-      order.textContent = pos >= 0 ? String(pos + 1) : "";
+      el.classList.toggle("selected", pos >= 0);
+      el.setAttribute("aria-pressed", String(pos >= 0));
+      el.querySelector(".order").textContent = pos >= 0 ? String(pos + 1) : "";
     });
 
     if (selected.length === 0) {
-      selectionRow.innerHTML = '<span class="placeholder-chip">Nenhum mood selecionado ainda</span>';
-      targetPath.setAttribute("d", ""); targetMarker.setAttribute("r", "0");
+      selectionRow.innerHTML = '<span class="placeholder-chip">Nenhum clima selecionado ainda</span>';
+      gaugeEnergy.style.width = "0%"; gaugeValence.style.width = "0%";
+      gaugeEnergy.style.background = "var(--border-strong)"; gaugeValence.style.background = "var(--border-strong)";
     } else {
-      selectionRow.innerHTML = selected.map((k, i) => `<span class="chip"><span class="n">${i + 1}</span>${vocabMeta[k].label}</span>`).join("");
-      const pts = selected.map((k) => nodeEls[k]);
-      targetPath.setAttribute("d", pts.length > 1 ? "M " + pts.map((p) => `${p.x} ${p.y}`).join(" L ") : "");
-      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-      const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
-      targetMarker.setAttribute("cx", cx); targetMarker.setAttribute("cy", cy);
-      targetMarker.setAttribute("r", pts.length > 1 ? 5 : 0);
+      selectionRow.innerHTML = selected.map((k, i) => `<span class="chip"><span class="n">${i + 1}</span>${MOOD_LABELS[k]}</span>`).join("");
+      const avgE = selected.reduce((s, k) => s + vocabMeta[k].energy, 0) / selected.length;
+      const avgV = selected.reduce((s, k) => s + vocabMeta[k].valence, 0) / selected.length;
+      const blendColor = tileColor(avgE, avgV);
+      gaugeEnergy.style.width = (avgE * 100).toFixed(0) + "%";
+      gaugeValence.style.width = (avgV * 100).toFixed(0) + "%";
+      gaugeEnergy.style.background = blendColor;
+      gaugeValence.style.background = blendColor;
     }
     previewBtn.disabled = selected.length === 0;
     youtubeBtn.disabled = true;
@@ -323,45 +644,47 @@
 
   function renderTracklist(faixas, comboLabel) {
     let html = `<div class="result-header">
-        <div class="combo"><span class="n">${faixas.length}</span> faixas · ${comboLabel}</div>
+        <div class="combo"><span class="n num">${faixas.length}</span> faixas · ${comboLabel}</div>
         <div class="meta">sequenciado por transição suave</div>
       </div><div class="tracklist">`;
     faixas.forEach((t, i) => {
       const yt = linkYoutube(t.track_name, t.artists);
       html += `<div class="track-row">
-          <div class="track-idx">${String(i + 1).padStart(2, "0")}</div>
+          <div class="track-idx num">${String(i + 1).padStart(2, "0")}</div>
           <div class="track-info">
             <div class="track-name"><span class="title">${escapeHtml(t.track_name)}</span>
               <a class="listen" href="${yt}" target="_blank" rel="noopener noreferrer" title="Buscar no YouTube">▶</a></div>
             <div class="track-sub">${escapeHtml(t.artists)}<span class="genre">${escapeHtml(t.track_genre)}</span></div>
           </div>
           <div class="badges"><span class="badge camelot">${t.camelot}</span></div>
-          <div class="badges"><span class="badge bpm mono">${t.tempo.toFixed(0)} BPM</span></div>
+          <div class="badges"><span class="badge bpm num">${t.tempo.toFixed(0)} BPM</span></div>
         </div>`;
       if (i < faixas.length - 1) {
         const delta = Math.abs(t.tempo - faixas[i + 1].tempo);
         html += `<div class="transition"><div class="line"><div class="stem"></div>
-            <span class="delta ${delta <= 10 ? "smooth" : ""} mono">Δ ${delta.toFixed(0)} BPM</span></div></div>`;
+            <span class="delta ${delta <= 10 ? "smooth" : ""} num">Δ ${delta.toFixed(0)} BPM</span></div></div>`;
       }
     });
     return html + "</div>";
   }
 
   previewBtn.addEventListener("click", async () => {
-    const n = parseInt(tamanhoInput.value, 10) || 20;
     previewBtn.disabled = true;
     previewBtn.innerHTML = '<span class="spinner"></span>Gerando...';
     resultArea.innerHTML = '<div class="result-empty">Consultando o backend local...</div>';
     try {
       const resp = await fetch("/api/preview", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ palavras: selected, n }),
+        body: JSON.stringify({ palavras: selected, n: tamanho }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.erro || "Erro desconhecido");
-      ultimaPreview = { palavras: [...selected], n };
-      const comboLabel = selected.map((k) => vocabMeta[k].label).join(" + ");
+      ultimaPreview = { palavras: [...selected], n: tamanho };
+      const comboLabel = selected.map((k) => MOOD_LABELS[k]).join(" + ");
       resultArea.innerHTML = renderTracklist(data.faixas, comboLabel);
+      resultArea.querySelectorAll(".track-row").forEach((row, i) => {
+        setTimeout(() => row.classList.add("shown"), 20 + i * 35);
+      });
       resultHint.textContent = "Prévia gerada. Se estiver boa, pode criar a playlist de verdade no YouTube.";
       youtubeBtn.disabled = false;
     } catch (e) {
