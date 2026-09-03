@@ -13,6 +13,10 @@ produto/credenciais/
 # (mantém o TSV de tags e a tabela já processada, exclui só os shards .tar.gz)
 dados_externos/mtg_jamendo/raw_shards/
 
+# Estado efêmero do dia (reseta à meia-noite do Pacífico) — não é histórico
+# como produto/logs/eventos.jsonl, que continua versionado.
+produto/logs/cota_youtube.json
+
 # Sistema
 .DS_Store
 materiais_aula/

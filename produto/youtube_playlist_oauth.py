@@ -45,6 +45,8 @@ gerar playlists pontuais, escolhidas à mão, para validação por escuta.
 import pickle
 import re
 import sys
+
+import cota_youtube
 from pathlib import Path
 
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -117,6 +119,7 @@ def buscar_video_id(youtube, track_name, artists, duracao_ms=None):
         resposta = youtube.search().list(
             part="id", q=consulta, type="video", maxResults=5
         ).execute()
+        cota_youtube.gastar(100)  # search.list: 100 unidades, sempre, ache ou não
     except HttpError as e:
         if _e_cota(e):
             raise CotaEsgotada(consulta) from e
@@ -132,6 +135,7 @@ def buscar_video_id(youtube, track_name, artists, duracao_ms=None):
     alvo = duracao_ms / 1000
     try:
         detalhes = youtube.videos().list(part="contentDetails", id=",".join(ids)).execute()
+        cota_youtube.gastar(1)  # videos.list: 1 unidade por chamada, não por id
     except HttpError as e:
         if _e_cota(e):
             raise CotaEsgotada(consulta) from e
@@ -169,6 +173,7 @@ def criar_playlist_youtube(youtube, titulo, descricao, video_ids, privacidade="u
             "status": {"privacyStatus": privacidade},  # "private", "unlisted" ou "public"
         },
     ).execute()
+    cota_youtube.gastar(50)  # playlists.insert: 50 unidades fixas
     playlist_id = playlist["id"]
 
     adicionadas, falhas = 0, []
@@ -191,10 +196,12 @@ def criar_playlist_youtube(youtube, titulo, descricao, video_ids, privacidade="u
                     }
                 },
             ).execute()
+            cota_youtube.gastar(50)  # playlistItems.insert: 50 unidades, sucesso
             adicionadas += 1
         except HttpError as e:
             if _e_cota(e):
                 raise CotaEsgotada(f"após {adicionadas} faixas") from e
+            cota_youtube.gastar(50)  # a chamada foi feita e cobrada mesmo tendo falhado
             falhas.append(video_id)
             print(f"  [erro ao adicionar] video_id={video_id}: {e}", flush=True)
 

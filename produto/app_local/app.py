@@ -32,6 +32,7 @@ from motor_playlist import MoodsContraditorios, PipelineMood  # noqa: E402
 from youtube_playlist_oauth import (  # noqa: E402
     CotaEsgotada, autenticar, buscar_video_id, criar_playlist_youtube,
 )
+import cota_youtube  # noqa: E402
 from googleapiclient.discovery import build  # noqa: E402
 import spotify_playlist as spotify  # noqa: E402
 
@@ -87,6 +88,11 @@ MINUTOS_MAXIMO = 180
 def duracao_texto(ms):
     minutos = int(round(ms / 60000))
     return f"{minutos // 60}h{minutos % 60:02d}" if minutos >= 60 else f"{minutos} min"
+
+
+@app.route("/api/cota")
+def cota():
+    return jsonify(cota_youtube.estado())
 
 
 @app.route("/api/buscar-faixa")
@@ -156,6 +162,14 @@ def criar_youtube():
     if not (1 <= len(track_ids) <= TAMANHO_MAXIMO):
         return jsonify({"erro": f"Gere uma prévia primeiro (1 a {TAMANHO_MAXIMO} faixas)."}), 400
 
+    restantes = cota_youtube.estado()["restantes"]
+    estimativa = custo_cota(len(track_ids))
+    if estimativa > restantes:
+        return jsonify({
+            "erro": f"Essa playlist custaria ~{estimativa} unidades de cota, mas só restam "
+                    f"{restantes} hoje (reseta à meia-noite do Pacífico). Tente com menos faixas."
+        }), 409
+
     # A prévia é o contrato: cria exatamente as faixas que o usuário aprovou, na
     # ordem que ele viu. Antes isto regerava a playlist do zero e só acertava
     # porque o motor era determinístico — com faixa inicial escolhida pelo
@@ -203,6 +217,7 @@ def criar_youtube():
             "adicionadas": adicionadas,
             "total": len(video_ids),
             "falhas_insercao": len(falhas_insercao),
+            "cota": cota_youtube.estado(),
         }
     )
 
