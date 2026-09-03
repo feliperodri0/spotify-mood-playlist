@@ -15,10 +15,33 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import tempfile  # noqa: E402
+
 import pandas as pd  # noqa: E402
 
+import cota_youtube  # noqa: E402
 from motor_playlist import PipelineMood  # noqa: E402
 from youtube_playlist_oauth import criar_playlist_youtube  # noqa: E402
+
+
+def com_arquivo_temporario(fn):
+    """Isola cota_youtube.ARQUIVO num caminho temporário durante o teste.
+
+    Sem isso, chamar criar_playlist_youtube (função real, só o cliente
+    `youtube` é dublê) grava no contador de cota REAL e compartilhado
+    (produto/logs/cota_youtube.json) -- achado pela revisão de código do
+    ticket #4: rodar esta suíte, como o próprio docstring do arquivo manda,
+    corrompia o contador que o ticket #2 existe para manter honesto."""
+    def envolvida():
+        original = cota_youtube.ARQUIVO
+        with tempfile.TemporaryDirectory() as tmp:
+            cota_youtube.ARQUIVO = Path(tmp) / "cota.json"
+            try:
+                fn()
+            finally:
+                cota_youtube.ARQUIVO = original
+    envolvida.__name__ = fn.__name__
+    return envolvida
 
 
 class FakeExec:
@@ -56,6 +79,7 @@ class FakePlaylists(FakeYouTube):
         return super().insert(part=part, body=body)
 
 
+@com_arquivo_temporario
 def test_faixa_nao_encontrada_nao_derruba_as_seguintes():
     yt = FakePlaylists()
     ids = ["a", "b", None, "c", "d"]  # a 3ª não foi encontrada
@@ -65,6 +89,7 @@ def test_faixa_nao_encontrada_nao_derruba_as_seguintes():
     assert url.endswith("PL_teste")
 
 
+@com_arquivo_temporario
 def test_insert_nao_manda_position():
     yt = FakePlaylists()
     criar_playlist_youtube(yt, "t", "d", ["a", None, "b"])
@@ -72,6 +97,7 @@ def test_insert_nao_manda_position():
     assert all("position" not in b["snippet"] for b in itens), "position voltou a ser enviado"
 
 
+@com_arquivo_temporario
 def test_conta_o_total_pedido_e_nao_o_adicionado():
     yt = FakePlaylists()
     _, adicionadas, _ = criar_playlist_youtube(yt, "t", "d", [None, None, "a"])

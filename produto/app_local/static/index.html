@@ -1041,6 +1041,7 @@
     const custo = CUSTO_FIXO + CUSTO_POR_FAIXA * Math.min(faixasEstimadas, 30);
     quotaCostEl.textContent = (modo === "tempo" ? "~" : "") + custo.toLocaleString("pt-BR") + " / 10.000 unid.";
     youtubeBtn.disabled = true;
+    if (spotifyBtn) spotifyBtn.disabled = true;  // sem isso, ficava clicável com a prévia já obsoleta
     ultimaPreview = null;
   }
 
