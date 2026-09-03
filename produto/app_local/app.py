@@ -103,6 +103,51 @@ def buscar_faixa():
     return jsonify({"faixas": pipeline.buscar_faixas(consulta)})
 
 
+CUSTO_MINIMO_PREVIEW = 500  # abaixo disso, recusa preview -- reserva cota pra criação de verdade
+
+
+@app.route("/api/preview-video", methods=["POST"])
+def preview_video():
+    """Preview sob demanda de um resultado de busca, no YouTube (ticket #4).
+
+    Existe porque nome+artista não bastam para confirmar que a semente
+    escolhida é a faixa certa: 4.384 títulos do catálogo são ambíguos, e a API
+    do Spotify não expõe mais preview de 30s (removido para apps criados
+    depois de nov/2024 -- confirmado, o campo preview_url nem vem na resposta).
+
+    Reaproveita buscar_video_id (blindagem por duração já existente) -- a
+    contabilização de cota (search.list=100 + videos.list=1) já acontece
+    dentro dela, instrumentada no ticket #2. Não gera cota extra aqui."""
+    corpo = request.get_json(force=True)
+    track_id = corpo.get("track_id", "")
+    linhas = pipeline.df[pipeline.df["track_id"] == track_id]
+    if linhas.empty:
+        return jsonify({"erro": "Faixa não encontrada no catálogo."}), 404
+    row = linhas.iloc[0]
+
+    restantes = cota_youtube.estado()["restantes"]
+    if restantes < CUSTO_MINIMO_PREVIEW:
+        return jsonify({
+            "erro": f"Restam só {restantes} unidades de cota hoje -- reservadas para criar playlists "
+                    f"de verdade. Preview desabilitado até a cota resetar (meia-noite, horário do Pacífico)."
+        }), 409
+
+    try:
+        creds = autenticar()
+    except FileNotFoundError as e:
+        return jsonify({"erro": str(e)}), 500
+
+    youtube = build("youtube", "v3", credentials=creds)
+    try:
+        video_id = buscar_video_id(youtube, row["track_name"], row["artists"], row["duration_ms"])
+    except CotaEsgotada as e:
+        return jsonify({"erro": f"A cota da API acabou durante a busca: {e}"}), 503
+
+    if video_id is None:
+        return jsonify({"erro": "Não encontrei essa faixa no YouTube.", "cota": cota_youtube.estado()}), 404
+    return jsonify({"video_id": video_id, "cota": cota_youtube.estado()})
+
+
 @app.route("/api/moods-compativeis")
 def moods_compativeis():
     """Quais dos 8 moods combinam com a faixa escolhida como semente (ticket

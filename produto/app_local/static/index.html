@@ -181,6 +181,16 @@
   .seed-search .resultado .a { font-size: 11.5px; color: var(--text-dim); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .seed-search .resultado .g { font-size: 10.5px; color: var(--text-faint); flex: none; }
   .seed-search .vazio { padding: 12px; font-size: 12.5px; color: var(--text-faint); text-align: center; }
+  .seed-search .ouvir-btn {
+    flex: none; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border-strong);
+    background: transparent; color: var(--text-faint); font-size: 10px; padding: 0; margin-left: 4px;
+  }
+  .seed-search .ouvir-btn:hover { color: var(--accent-1); border-color: var(--accent-1); }
+  .seed-search .ouvir-btn:disabled { opacity: 0.5; cursor: wait; }
+  .resultado-extra { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .resultado-extra .player-embed { aspect-ratio: 16/9; width: 100%; border-radius: 8px; overflow: hidden; background: #000; }
+  .resultado-extra .player-embed iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .resultado-extra.erro { color: var(--bad); font-size: 11.5px; }
   .seed-chip {
     display: flex; align-items: center; gap: 10px; background: var(--surface-2);
     border: 1px solid var(--accent-1); border-radius: 12px; padding: 10px 12px; margin-bottom: 16px;
@@ -822,11 +832,51 @@
       <div class="resultado" data-id="${escapeHtml(f.track_id)}" data-nome="${escapeHtml(f.track_name)}" data-artista="${escapeHtml(f.artists)}">
         <span class="info"><span class="t">${escapeHtml(f.track_name)}</span><span class="a">${escapeHtml(f.artists)}</span></span>
         <span class="g">${escapeHtml(f.track_genre)}</span>
+        <button type="button" class="ouvir-btn" title="Ouvir no YouTube (gasta cota)" data-ouvir="${escapeHtml(f.track_id)}">▶</button>
       </div>`).join("");
     seedResultados.hidden = false;
     seedResultados.querySelectorAll(".resultado").forEach((el) => {
       el.addEventListener("click", () => escolherSemente(el.dataset.id, el.dataset.nome, el.dataset.artista));
     });
+    // stopPropagation: sem isso, clicar em "ouvir" também dispararia o clique
+    // da linha inteira (escolher como semente) -- ticket #4.
+    seedResultados.querySelectorAll(".ouvir-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => { e.stopPropagation(); ouvirPreview(btn); });
+    });
+  }
+
+  /* Preview sob demanda de um resultado da busca, no YouTube (ticket #4).
+     Existe porque nome+artista não bastam para confirmar a faixa certa (4.384
+     títulos ambíguos no catálogo) e o Spotify não expõe mais preview de 30s
+     (removido para apps criados depois de nov/2024). Custa cota real -- por
+     isso fica atrás de um clique, não carrega sozinho. */
+  async function ouvirPreview(btn) {
+    const trackId = btn.dataset.ouvir;
+    const linha = btn.closest(".resultado");
+    const antigo = linha.nextElementSibling;
+    if (antigo && antigo.classList.contains("resultado-extra")) antigo.remove();
+
+    btn.disabled = true;
+    btn.textContent = "…";
+    try {
+      const resp = await fetch("/api/preview-video", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ track_id: trackId }),
+      });
+      const data = await resp.json();
+      if (data.cota) atualizarQuotaReal(data.cota);
+      if (!resp.ok) throw new Error(data.erro || "Erro desconhecido");
+      linha.insertAdjacentHTML("afterend", `
+        <div class="resultado-extra"><div class="player-embed">
+          <iframe src="https://www.youtube.com/embed/${escapeHtml(data.video_id)}?autoplay=1"
+            allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        </div></div>`);
+    } catch (e) {
+      linha.insertAdjacentHTML("afterend", `<div class="resultado-extra erro">${escapeHtml(e.message)}</div>`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "▶";
+    }
   }
 
   async function escolherSemente(trackId, nome, artista) {
