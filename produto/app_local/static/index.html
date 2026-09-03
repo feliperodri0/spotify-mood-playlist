@@ -225,6 +225,37 @@
   .badge.bpm { color: var(--text); }
   .badge.camelot { color: var(--accent-1); border-color: var(--accent-3); }
 
+  /* Tooltip: qualquer elemento com [data-tip]. Aparece no hover e também no
+     foco, para funcionar com teclado e com toque no celular. */
+  .tip { position: relative; cursor: help; }
+  .tip::after {
+    content: attr(data-tip);
+    position: absolute; bottom: calc(100% + 9px); left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    width: max-content; max-width: min(300px, 74vw);
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: 11px;
+    padding: 10px 12px; font-size: 11.5px; font-weight: 500; line-height: 1.5;
+    letter-spacing: 0; text-align: left; white-space: normal; text-transform: none;
+    box-shadow: 0 16px 34px -14px rgba(0,0,0,0.85);
+    opacity: 0; pointer-events: none; z-index: 40;
+    transition: opacity 0.16s ease, transform 0.16s ease;
+  }
+  .tip::before {
+    content: ""; position: absolute; bottom: calc(100% + 4px); left: 50%;
+    transform: translateX(-50%); border: 5px solid transparent;
+    border-top-color: var(--border-strong); opacity: 0; z-index: 41;
+    transition: opacity 0.16s ease;
+  }
+  .tip:hover::after, .tip:focus::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .tip:hover::before, .tip:focus::before { opacity: 1; }
+  .tip:focus { outline: 1px solid var(--accent-3); outline-offset: 2px; }
+  /* Badges ficam na borda direita da linha: ancora o balão pela direita para
+     ele não sair da tela. */
+  .tip-right::after { left: auto; right: -6px; transform: translateY(4px); }
+  .tip-right:hover::after, .tip-right:focus::after { transform: translateY(0); }
+  .tip-right::before { left: auto; right: 12px; transform: none; }
+
   .transition { display: grid; grid-template-columns: 26px 1fr; gap: 12px; padding: 1px 8px; }
   .transition .line { grid-column: 1/-1; display: flex; align-items: center; gap: 8px; padding-left: 26px; }
   .transition .stem { width: 1px; height: 12px; background: var(--border-strong); margin-left: 12.5px; }
@@ -557,6 +588,23 @@
   let ultimaPreview = null;
   const tileEls = {};
 
+  // Roda de Camelot: mesmas tabelas do motor (motor_playlist.py), invertidas
+  // para traduzir o código de volta para a tonalidade.
+  const CAMELOT_MAIOR = { 0:8, 1:3, 2:10, 3:5, 4:12, 5:7, 6:2, 7:9, 8:4, 9:11, 10:6, 11:1 };
+  const CAMELOT_MENOR = { 0:5, 1:12, 2:7, 3:2, 4:9, 5:4, 6:11, 7:6, 8:1, 9:8, 10:3, 11:10 };
+  const NOTAS = ["Dó", "Dó♯", "Ré", "Mi♭", "Mi", "Fá", "Fá♯", "Sol", "Sol♯", "Lá", "Si♭", "Si"];
+  const TOM_POR_CODIGO = {};
+  Object.entries(CAMELOT_MAIOR).forEach(([k, n]) => { TOM_POR_CODIGO[n + "B"] = NOTAS[k] + " maior"; });
+  Object.entries(CAMELOT_MENOR).forEach(([k, n]) => { TOM_POR_CODIGO[n + "A"] = NOTAS[k] + " menor"; });
+
+  function dicaCamelot(codigo) {
+    const tom = TOM_POR_CODIGO[codigo];
+    return `${codigo}${tom ? " = " + tom : ""}. Código da roda de Camelot, que DJs usam para emendar faixas sem dissonância: o número é a tonalidade e a letra o modo (A = menor, B = maior). Combinam entre si o mesmo número, o número vizinho com a mesma letra, e o mesmo número trocando a letra.`;
+  }
+
+  const DICA_BPM = "Batidas por minuto — o andamento da faixa. O sequenciamento coloca lado a lado faixas de andamento parecido, para a passagem não dar solavanco.";
+  const DICA_DELTA = "Quanto o andamento muda daqui para a próxima faixa. Até 10 BPM a mudança passa despercebida enquanto se ouve, e o valor fica verde. Numa ordem aleatória esse salto fica perto de 25 BPM.";
+
   function linkYoutube(nome, artista) {
     return "https://www.youtube.com/results?search_query=" + encodeURIComponent(nome + " " + artista);
   }
@@ -697,9 +745,12 @@
   }
 
   function renderTracklist(faixas, comboLabel) {
+    const saltos = faixas.slice(0, -1).map((t, i) => Math.abs(t.tempo - faixas[i + 1].tempo));
+    const saltoMedio = saltos.length ? saltos.reduce((a, b) => a + b, 0) / saltos.length : 0;
+    const dicaOrdem = `As faixas não vêm na ordem em que foram encontradas: o algoritmo as reordena para que cada uma emende na seguinte, minimizando ao mesmo tempo a diferença de andamento e a distância harmônica. Salto médio nesta playlist: ${saltoMedio.toFixed(1)} BPM.`;
     let html = `<div class="result-header">
         <div class="combo"><span class="n num">${faixas.length}</span> faixas · ${comboLabel}</div>
-        <div class="meta">sequenciado por transição suave</div>
+        <div class="meta tip tip-right" tabindex="0" data-tip="${escapeHtml(dicaOrdem)}">sequenciado por transição suave ⓘ</div>
       </div><div class="tracklist">`;
     faixas.forEach((t, i) => {
       const yt = linkYoutube(t.track_name, t.artists);
@@ -710,13 +761,13 @@
               <a class="listen" href="${yt}" target="_blank" rel="noopener noreferrer" title="Buscar no YouTube">▶</a></div>
             <div class="track-sub">${escapeHtml(t.artists)}<span class="genre">${escapeHtml(t.track_genre)}</span></div>
           </div>
-          <div class="badges"><span class="badge camelot">${t.camelot}</span></div>
-          <div class="badges"><span class="badge bpm num">${t.tempo.toFixed(0)} BPM</span></div>
+          <div class="badges"><span class="badge camelot tip tip-right" tabindex="0" data-tip="${escapeHtml(dicaCamelot(t.camelot))}">${t.camelot}</span></div>
+          <div class="badges"><span class="badge bpm num tip tip-right" tabindex="0" data-tip="${escapeHtml(DICA_BPM)}">${t.tempo.toFixed(0)} BPM</span></div>
         </div>`;
       if (i < faixas.length - 1) {
         const delta = Math.abs(t.tempo - faixas[i + 1].tempo);
         html += `<div class="transition"><div class="line"><div class="stem"></div>
-            <span class="delta ${delta <= 10 ? "smooth" : ""} num">Δ ${delta.toFixed(0)} BPM</span></div></div>`;
+            <span class="delta ${delta <= 10 ? "smooth" : ""} num tip" tabindex="0" data-tip="${escapeHtml(DICA_DELTA)}">Δ ${delta.toFixed(0)} BPM</span></div></div>`;
       }
     });
     return html + "</div>";
