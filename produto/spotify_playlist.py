@@ -126,15 +126,27 @@ def faixas_indisponiveis(token, track_ids, mercado=None):
 
     Vale conferir antes de criar: o dataset tem faixas que saíram do catálogo ou
     que não estão liberadas em todo país, e adicionar uma dessas cria uma linha
-    morta na playlist."""
+    morta na playlist.
+
+    Um id por chamada, não em lote: "Get Several Tracks" (`/tracks?ids=...`)
+    devolve 403 para este app mesmo com token limpo, sem usuário envolvido —
+    medido diretamente contra a API, com client_credentials. "Get Track"
+    (`/tracks/{id}`, um de cada vez) funciona normalmente. É a mesma família de
+    restrição do `audio-features` que o projeto já documentava como cortado
+    desde nov/2024 (planejamentoModelo.md) — o Spotify ampliou a lista de
+    endpoints negados a apps em modo de desenvolvimento, e o lote entrou nela em
+    algum momento depois disso. N requisições em vez de N/50 não pesa aqui: o
+    teto de faixas por playlist já é 30."""
     ruins = []
-    for i in range(0, len(track_ids), 50):  # /tracks aceita 50 por chamada
-        lote = track_ids[i:i + 50]
-        sufixo = f"&market={mercado}" if mercado else ""
-        resposta = _get(token, f"/tracks?ids={','.join(lote)}{sufixo}")
-        for track_id, faixa in zip(lote, resposta.get("tracks", [])):
-            if faixa is None or (mercado and not faixa.get("is_playable", True)):
-                ruins.append(track_id)
+    sufixo = f"?market={mercado}" if mercado else ""
+    for track_id in track_ids:
+        try:
+            faixa = _get(token, f"/tracks/{track_id}{sufixo}")
+        except SpotifyErro:
+            ruins.append(track_id)
+            continue
+        if mercado and not faixa.get("is_playable", True):
+            ruins.append(track_id)
     return ruins
 
 
