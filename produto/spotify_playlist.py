@@ -150,26 +150,47 @@ def faixas_indisponiveis(token, track_ids, mercado=None):
     return ruins
 
 
-def criar_playlist(token, user_id, nome, descricao, publica=False):
+def criar_playlist(token, nome, descricao, publica=False):
+    """Cria a playlist do usuário autenticado.
+
+    Migração de fevereiro/2026 do Spotify: `POST /users/{user_id}/playlists`
+    (que exigia o id do usuário na URL) foi substituído por `POST /me/playlists`,
+    sempre "o usuário do token". O endpoint antigo devolve 403 genérico
+    ("Forbidden", sem motivo) para apps em Development Mode — foi a causa real
+    de "criar playlist: 403" mesmo com o escopo certo no token, descoberta lendo
+    o guia de migração do Spotify (não estava documentada na referência
+    normal da API, só no tutorial de migração)."""
     r = requests.post(
-        f"{API}/users/{user_id}/playlists",
+        f"{API}/me/playlists",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         json={"name": nome, "description": descricao, "public": publica},
         timeout=15,
     )
     if r.status_code not in (200, 201):
-        raise SpotifyErro(f"criar playlist: {r.status_code} {r.text[:200]}")
+        # Um 403 aqui não diz o motivo no corpo ("Forbidden" e mais nada). O
+        # cabeçalho WWW-Authenticate de respostas OAuth costuma carregar o
+        # motivo real (ex.: error="insufficient_scope") quando o Spotify se
+        # dá ao trabalho de mandar; nem sempre manda.
+        motivo = r.headers.get("www-authenticate", "")
+        print(f"  [spotify criar_playlist] {r.status_code} corpo={r.text[:200]!r} www-authenticate={motivo!r}", flush=True)
+        raise SpotifyErro(f"criar playlist: {r.status_code} {r.text[:200]}" + (f" ({motivo})" if motivo else ""))
     p = r.json()
     return p["id"], p["external_urls"]["spotify"]
 
 
 def adicionar_faixas(token, playlist_id, track_ids):
-    """Adiciona em lotes de 100, na ordem recebida. Devolve quantas entraram."""
+    """Adiciona em lotes de 100, na ordem recebida. Devolve quantas entraram.
+
+    Mesma migração de fevereiro/2026: `/playlists/{id}/tracks` virou
+    `/playlists/{id}/items`. O corpo (`{"uris": [...]}`) não muda pela
+    documentação consultada, mas isso é o que o guia de migração afirmou — se o
+    Spotify recusar por causa do corpo, o erro virá com detalhe (diferente do
+    403 genérico da criação), então dá para ajustar rápido se acontecer."""
     adicionadas = 0
     for i in range(0, len(track_ids), LOTE):
         uris = [f"spotify:track:{t}" for t in track_ids[i:i + LOTE]]
         r = requests.post(
-            f"{API}/playlists/{playlist_id}/tracks",
+            f"{API}/playlists/{playlist_id}/items",
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             json={"uris": uris},
             timeout=20,

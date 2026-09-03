@@ -284,7 +284,7 @@ def criar_spotify():
             return jsonify({"erro": "Nenhuma das faixas está disponível na sua conta."}), 400
 
         playlist_id, url = spotify.criar_playlist(
-            token, eu["id"], f"soundpark · {' + '.join(palavras)}",
+            token, f"soundpark · {' + '.join(palavras)}",
             "Gerada por mood (âncoras no espaço de audio features) e ordenada por transição suave.",
             publica=bool(corpo.get("publica")),
         )
