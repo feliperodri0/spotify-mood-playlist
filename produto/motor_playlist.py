@@ -117,6 +117,32 @@ class PipelineMood:
             for palavra in self.vocabulario
         }
 
+    def buscar_faixas(self, consulta, limite=8):
+        """Busca por substring em nome ou artista, no catálogo inteiro (não só
+        nas candidatas de um clima) -- é essa busca que alimenta a escolha de
+        faixa inicial antes de gerar (ticket #1).
+
+        Deduplicada por (track_name, artists): o catálogo tem duplicatas de
+        catalogação (mesma faixa sob vários track_id, uma por gênero/edição —
+        "Happier" sozinha tem 46 linhas). Ordenada por popularidade descendente,
+        para o resultado mais reconhecível aparecer primeiro entre homônimos
+        (4.384 títulos do catálogo têm mais de um artista distinto)."""
+        consulta = (consulta or "").strip()
+        if len(consulta) < 2:
+            return []
+        alvo = consulta.casefold()
+        mascara = (
+            self.df["track_name"].str.casefold().str.contains(alvo, regex=False)
+            | self.df["artists"].str.casefold().str.contains(alvo, regex=False)
+        )
+        candidatas = (
+            self.df.loc[mascara]
+            .sort_values("popularity", ascending=False)
+            .drop_duplicates(subset=["track_name", "artists"])
+            .head(limite)
+        )
+        return candidatas[["track_id", "track_name", "artists", "track_genre"]].to_dict("records")
+
     def selecionar_candidatas(self, palavras, n=20):
         """Candidatas que atendem **todas** as palavras pedidas, não a média delas.
 
@@ -226,8 +252,14 @@ class PipelineMood:
 
     def gerar_playlist(self, palavras, n=20, faixa_inicial=None):
         """Playlist por número de faixas. `faixa_inicial` é um track_id que passa
-        a ser a primeira faixa; ignorado se não estiver entre as candidatas."""
+        a ser a primeira faixa. Se não estiver entre as candidatas naturais do(s)
+        clima(s), entra à força (ticket #1: a busca por semente é sobre o
+        catálogo inteiro, não fica restrita às poucas dezenas de candidatas que
+        a âncora do clima escolheria sozinha — sem isso, a garantia "a playlist
+        começa pela faixa escolhida" quebraria em silêncio sempre que a semente
+        não fosse uma vizinha natural do clima)."""
         candidatas, X_cand = self.selecionar_candidatas(palavras, n=n)
+        candidatas, X_cand = self._garantir_semente(candidatas, X_cand, faixa_inicial)
         return self.sequenciar(candidatas, X_cand, inicio=self._indice_de(candidatas, faixa_inicial))
 
     def gerar_playlist_por_duracao(self, palavras, minutos, faixa_inicial=None, teto_faixas=30):
@@ -245,6 +277,7 @@ class PipelineMood:
         n = max(2, min(estimativa, teto_faixas))
 
         candidatas, X_cand = self.selecionar_candidatas(palavras, n=n)
+        candidatas, X_cand = self._garantir_semente(candidatas, X_cand, faixa_inicial)
         ordenada = self.sequenciar(candidatas, X_cand, inicio=self._indice_de(candidatas, faixa_inicial))
 
         acumulado, melhor_corte, melhor_erro = 0.0, 1, None
@@ -263,6 +296,22 @@ class PipelineMood:
             return 0
         posicoes = candidatas.index[candidatas["track_id"] == track_id].tolist()
         return int(posicoes[0]) if posicoes else 0
+
+    def _garantir_semente(self, candidatas, X_cand, faixa_inicial):
+        """Se `faixa_inicial` já está entre as candidatas, não faz nada. Senão,
+        busca a faixa no catálogo inteiro e a substitui no lugar da candidata
+        mais fraca (a última, já que `selecionar_candidatas` devolve em ordem de
+        proximidade à âncora), preservando o tamanho `n` pedido."""
+        if not faixa_inicial or faixa_inicial in candidatas["track_id"].values:
+            return candidatas, X_cand
+        linhas = self.df.index[self.df["track_id"] == faixa_inicial]
+        if len(linhas) == 0:  # id inexistente no catálogo: ignora silenciosamente
+            return candidatas, X_cand
+        idx_catalogo = linhas[0]
+        nova_linha = self.df.loc[[idx_catalogo]]
+        nova_candidatas = pd.concat([candidatas.iloc[:-1], nova_linha], ignore_index=True)
+        novo_X = np.vstack([X_cand[:-1], self.X[idx_catalogo]])
+        return nova_candidatas, novo_X
 
     def faixas_por_id(self, track_ids):
         """Devolve as faixas na ORDEM dos ids recebidos.

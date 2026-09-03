@@ -89,6 +89,14 @@ def duracao_texto(ms):
     return f"{minutos // 60}h{minutos % 60:02d}" if minutos >= 60 else f"{minutos} min"
 
 
+@app.route("/api/buscar-faixa")
+def buscar_faixa():
+    """Busca no catálogo inteiro (não nas candidatas de um clima) para escolher
+    faixa inicial antes de gerar a playlist -- ticket #1."""
+    consulta = request.args.get("q", "")
+    return jsonify({"faixas": pipeline.buscar_faixas(consulta)})
+
+
 @app.route("/api/preview", methods=["POST"])
 def preview():
     corpo = request.get_json(force=True)

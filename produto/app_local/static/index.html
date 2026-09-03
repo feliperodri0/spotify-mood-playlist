@@ -156,6 +156,42 @@
 
   .size-block { margin-top: 18px; }
   .size-block label { font-size: 12px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  /* ---- Busca de faixa inicial (ticket #1) ---- */
+  .seed-search { margin-bottom: 16px; }
+  .seed-search .campo { position: relative; }
+  .seed-search input {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+    color: var(--text); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13.5px;
+    padding: 11px 13px; outline: none;
+  }
+  .seed-search input:focus { border-color: var(--accent-1); }
+  .seed-search .resultados {
+    position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 6px);
+    background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 12px;
+    box-shadow: 0 16px 34px -14px rgba(0,0,0,0.8); max-height: 280px; overflow-y: auto;
+  }
+  .seed-search .resultado {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer;
+    border-bottom: 1px solid var(--border);
+  }
+  .seed-search .resultado:last-child { border-bottom: none; }
+  .seed-search .resultado:hover { background: var(--surface); }
+  .seed-search .resultado .info { min-width: 0; flex: 1; }
+  .seed-search .resultado .t { font-size: 13px; font-weight: 700; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seed-search .resultado .a { font-size: 11.5px; color: var(--text-dim); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seed-search .resultado .g { font-size: 10.5px; color: var(--text-faint); flex: none; }
+  .seed-search .vazio { padding: 12px; font-size: 12.5px; color: var(--text-faint); text-align: center; }
+  .seed-chip {
+    display: flex; align-items: center; gap: 10px; background: var(--surface-2);
+    border: 1px solid var(--accent-1); border-radius: 12px; padding: 10px 12px; margin-bottom: 16px;
+  }
+  .seed-chip .icon { color: var(--accent-1); flex: none; font-size: 13px; }
+  .seed-chip .info { min-width: 0; flex: 1; }
+  .seed-chip .t { font-size: 13px; font-weight: 700; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seed-chip .a { font-size: 11.5px; color: var(--text-dim); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seed-chip button { flex: none; background: transparent; border: none; color: var(--text-faint); font-size: 15px; padding: 2px 4px; }
+  .seed-chip button:hover { color: var(--bad); }
+
   .modo-switch { display: flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 3px; margin-bottom: 12px; }
   .modo-opt {
     flex: 1; padding: 8px 6px; border-radius: 9px; border: none; background: transparent; color: var(--text-dim);
@@ -323,12 +359,25 @@
   <header class="hero">
     <div class="vinyl-hero" id="vinyl-hero" aria-hidden="true"></div>
     <h1 class="hero-headline">Playlists automáticas, feitas <span class="hot">pra você</span></h1>
-    <p class="tagline">Escolha até 3 climas, a gente sequencia por transição suave e cria a playlist de verdade no <b>YouTube</b>.</p>
+    <p class="tagline">Escolha até 3 climas, a gente sequencia por transição suave e cria a playlist no <b>YouTube</b> ou <b>Spotify</b>.</p>
   </header>
 
   <div class="layout">
     <section class="panel">
       <h2>Escolha o clima</h2>
+
+      <div class="seed-search">
+        <div class="campo">
+          <input type="text" id="seed-input" placeholder="Começar por uma música específica? (opcional)" autocomplete="off">
+          <div class="resultados" id="seed-resultados" hidden></div>
+        </div>
+      </div>
+      <div class="seed-chip" id="seed-chip" hidden>
+        <span class="icon">★</span>
+        <span class="info"><span class="t" id="seed-chip-nome"></span><span class="a" id="seed-chip-artista"></span></span>
+        <button id="seed-limpar" title="Remover a faixa inicial">✕</button>
+      </div>
+
       <p class="hint">Toque em até 3. Climas opostos se desabilitam sozinhos — não existe música que seja as duas coisas ao mesmo tempo. A cor de cada card reflete a energia e a valência médias das faixas daquele clima.</p>
 
       <div class="mood-grid" id="mood-grid"></div>
@@ -356,14 +405,14 @@
         </div>
       </div>
 
-      <button class="primary" id="preview-btn" disabled>Pré-visualizar (grátis)</button>
+      <button class="primary" id="preview-btn" disabled>Pré-visualizar</button>
 
       <select class="privacidade" id="privacidade">
         <option value="unlisted">Não listada (link compartilhável)</option>
         <option value="private">Privada (só eu)</option>
         <option value="public">Pública</option>
       </select>
-      <button class="youtube" id="youtube-btn" disabled>Criar playlist de verdade no YouTube</button>
+      <button class="youtube" id="youtube-btn" disabled>Criar playlist no YouTube</button>
       <div class="spotify-block" id="spotify-block" hidden>
         <a class="spotify-login" id="spotify-login" href="/login/spotify" hidden>Entrar com Spotify</a>
         <button class="spotify" id="spotify-btn" hidden disabled>Criar no Spotify</button>
@@ -642,6 +691,7 @@
   let modo = "faixas";
   let minutos = 30;
   let faixaInicial = null;   // track_id escolhido como ponto de partida
+  let faixaInicialInfo = null; // {track_name, artists} para mostrar no chip
   let ultimaPreview = null;
   const tileEls = {};
 
@@ -739,6 +789,70 @@
     setTimeout(() => toast.classList.remove("on"), 5000);
   }
 
+  // ---- Busca de faixa inicial (ticket #1) ----
+  const seedInput = document.getElementById("seed-input");
+  const seedResultados = document.getElementById("seed-resultados");
+  const seedChip = document.getElementById("seed-chip");
+  const seedChipNome = document.getElementById("seed-chip-nome");
+  const seedChipArtista = document.getElementById("seed-chip-artista");
+  let seedDebounce = null;
+
+  function esconderResultadosBusca() { seedResultados.hidden = true; seedResultados.innerHTML = ""; }
+
+  function renderResultadosBusca(faixas) {
+    if (!faixas.length) {
+      seedResultados.innerHTML = '<div class="vazio">Nenhuma faixa encontrada.</div>';
+      seedResultados.hidden = false;
+      return;
+    }
+    seedResultados.innerHTML = faixas.map((f) => `
+      <div class="resultado" data-id="${escapeHtml(f.track_id)}" data-nome="${escapeHtml(f.track_name)}" data-artista="${escapeHtml(f.artists)}">
+        <span class="info"><span class="t">${escapeHtml(f.track_name)}</span><span class="a">${escapeHtml(f.artists)}</span></span>
+        <span class="g">${escapeHtml(f.track_genre)}</span>
+      </div>`).join("");
+    seedResultados.hidden = false;
+    seedResultados.querySelectorAll(".resultado").forEach((el) => {
+      el.addEventListener("click", () => escolherSemente(el.dataset.id, el.dataset.nome, el.dataset.artista));
+    });
+  }
+
+  function escolherSemente(trackId, nome, artista) {
+    faixaInicial = trackId;
+    faixaInicialInfo = { nome, artista };
+    seedInput.value = "";
+    esconderResultadosBusca();
+    seedChipNome.textContent = nome;
+    seedChipArtista.textContent = artista;
+    seedChip.hidden = false;
+    // Uma nova semente pode invalidar a prévia/seleção atual -- mesma regra já
+    // usada quando o clima muda: força gerar de novo.
+    ultimaPreview = null;
+    youtubeBtn.disabled = true;
+    if (spotifyBtn) spotifyBtn.disabled = true;
+  }
+
+  document.getElementById("seed-limpar").addEventListener("click", () => {
+    faixaInicial = null;
+    faixaInicialInfo = null;
+    seedChip.hidden = true;
+  });
+
+  seedInput.addEventListener("input", () => {
+    clearTimeout(seedDebounce);
+    const q = seedInput.value.trim();
+    if (q.length < 2) { esconderResultadosBusca(); return; }
+    seedDebounce = setTimeout(async () => {
+      try {
+        const resp = await fetch("/api/buscar-faixa?q=" + encodeURIComponent(q));
+        const data = await resp.json();
+        renderResultadosBusca(data.faixas || []);
+      } catch (e) { esconderResultadosBusca(); }
+    }, 250);
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".seed-search")) esconderResultadosBusca();
+  });
+
   async function iniciar() {
     montarStepper();
     tratarRetornoSpotify();
@@ -812,8 +926,7 @@
     botao.addEventListener("click", () => {
       modo = botao.dataset.modo;
       modoSwitchEl.querySelectorAll(".modo-opt").forEach((x) => x.classList.toggle("selected", x === botao));
-      faixaInicial = null;  // a semente vinha do conjunto de candidatas anterior
-      montarStepper();
+      montarStepper();  // faixaInicial (se veio da busca) sobrevive à troca de modo: _garantir_semente no motor a força de qualquer forma
     });
   });
 
@@ -891,7 +1004,10 @@
     youtubeBtn.disabled = true;
     if (spotifyBtn) spotifyBtn.disabled = true;
     ultimaPreview = null;
-    faixaInicial = null;  // candidatas mudam com o clima; o id antigo não existe mais
+    // faixaInicial (se veio da busca, ticket #1) sobrevive à troca de clima --
+    // o motor a força nas candidatas de qualquer clima via _garantir_semente.
+    // Só é trocada explicitamente: X no chip, nova busca, ou clique numa
+    // estrela dentro de uma prévia já gerada.
   }
 
   function renderTracklist(faixas, comboLabel, duracaoTotal) {
@@ -970,7 +1086,7 @@
     }
   }
 
-  previewBtn.addEventListener("click", () => { faixaInicial = null; gerarPreview(); });
+  previewBtn.addEventListener("click", () => gerarPreview());
 
   youtubeBtn.addEventListener("click", async () => {
     if (!ultimaPreview) return;
