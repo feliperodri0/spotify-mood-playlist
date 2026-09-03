@@ -15,10 +15,12 @@ Rodar:
 Depois abrir http://localhost:5001 no navegador.
 """
 
+import os
+import secrets
 import sys
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, redirect, request, send_from_directory, session
 
 DIR = Path(__file__).parent          # produto/app_local/
 PRODUTO = DIR.parent                 # produto/
@@ -31,8 +33,12 @@ from youtube_playlist_oauth import (  # noqa: E402
     CotaEsgotada, autenticar, buscar_video_id, criar_playlist_youtube,
 )
 from googleapiclient.discovery import build  # noqa: E402
+import spotify_playlist as spotify  # noqa: E402
 
 app = Flask(__name__, static_folder="static", static_url_path="")
+# Sessão só guarda o token do Spotify do usuário. Chave efêmera: reiniciar o
+# servidor desloga todo mundo, o que é o certo para um app local.
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 
 # Carrega o pipeline uma única vez, na subida do servidor
 pipeline = PipelineMood(ENTREGAS)
@@ -191,6 +197,90 @@ def criar_youtube():
             "falhas_insercao": len(falhas_insercao),
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Spotify: os track_id do dataset SÃO os ids do Spotify, então não há busca —
+# a faixa que o modelo escolheu é a que entra na playlist. Sem custo de busca,
+# sem risco de cover/ao vivo, e uma playlist de 30 faixas cabe em 2 requisições.
+# ---------------------------------------------------------------------------
+
+
+@app.route("/api/spotify/status")
+def spotify_status():
+    if not spotify.configurado():
+        return jsonify({"configurado": False, "logado": False})
+    dados = session.get("spotify")
+    if not dados:
+        return jsonify({"configurado": True, "logado": False})
+    try:
+        token, atualizado = spotify.token_valido(dados)
+        session["spotify"] = atualizado
+        return jsonify({"configurado": True, "logado": True, **spotify.perfil(token)})
+    except spotify.SpotifyErro:
+        session.pop("spotify", None)  # token morto: força novo login
+        return jsonify({"configurado": True, "logado": False})
+
+
+@app.route("/login/spotify")
+def spotify_login():
+    estado = secrets.token_urlsafe(16)
+    session["spotify_state"] = estado
+    try:
+        return redirect(spotify.url_autorizacao(estado))
+    except spotify.SpotifyNaoConfigurado as e:
+        return jsonify({"erro": str(e)}), 503
+
+
+@app.route("/callback")
+def spotify_callback():
+    if request.args.get("error"):
+        return redirect("/?spotify=negado")
+    # O state impede que outra página dispare o callback com um código alheio.
+    if not request.args.get("state") or request.args["state"] != session.pop("spotify_state", None):
+        return redirect("/?spotify=estado_invalido")
+    try:
+        session["spotify"] = spotify.trocar_codigo(request.args["code"])
+    except (spotify.SpotifyErro, spotify.SpotifyNaoConfigurado):
+        return redirect("/?spotify=falhou")
+    return redirect("/?spotify=ok")
+
+
+@app.route("/api/criar-spotify", methods=["POST"])
+def criar_spotify():
+    corpo = request.get_json(force=True)
+    palavras = [p for p in corpo.get("palavras", []) if p in pipeline.vocabulario]
+    track_ids = corpo.get("track_ids") or []
+    if not palavras or not track_ids:
+        return jsonify({"erro": "Gere uma prévia primeiro."}), 400
+    if not session.get("spotify"):
+        return jsonify({"erro": "Entre com o Spotify primeiro."}), 401
+
+    try:
+        token, atualizado = spotify.token_valido(session["spotify"])
+        session["spotify"] = atualizado
+        eu = spotify.perfil(token)
+
+        indisponiveis = spotify.faixas_indisponiveis(token, track_ids)
+        entram = [t for t in track_ids if t not in indisponiveis]
+        if not entram:
+            return jsonify({"erro": "Nenhuma das faixas está disponível na sua conta."}), 400
+
+        playlist_id, url = spotify.criar_playlist(
+            token, eu["id"], f"soundpark · {' + '.join(palavras)}",
+            "Gerada por mood (âncoras no espaço de audio features) e ordenada por transição suave.",
+            publica=bool(corpo.get("publica")),
+        )
+        adicionadas = spotify.adicionar_faixas(token, playlist_id, entram)
+    except spotify.SpotifyNaoConfigurado as e:
+        return jsonify({"erro": str(e)}), 503
+    except spotify.SpotifyErro as e:
+        return jsonify({"erro": f"O Spotify recusou: {e}"}), 502
+
+    return jsonify({
+        "url": url, "adicionadas": adicionadas, "total": len(track_ids),
+        "indisponiveis": len(indisponiveis),
+    })
 
 
 if __name__ == "__main__":

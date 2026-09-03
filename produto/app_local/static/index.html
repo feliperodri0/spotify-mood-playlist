@@ -283,6 +283,18 @@
 
   footer.note { border-top: 1px solid var(--border); padding-top: 18px; color: var(--text-faint); font-size: 12px; max-width: 82ch; position: relative; z-index: 1; }
   footer.note strong { color: var(--text-dim); }
+  .spotify-block { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .spotify, .spotify-login {
+    display: block; width: 100%; text-align: center; text-decoration: none;
+    padding: 13px 16px; border-radius: 12px; border: 1px solid #1DB954;
+    background: rgba(29,185,84,0.12); color: #1DB954; font-weight: 800; font-size: 14px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .spotify:hover, .spotify-login:hover { background: #1DB954; color: #04170B; }
+  .spotify:disabled { opacity: 0.4; cursor: not-allowed; background: rgba(29,185,84,0.06); }
+  .spotify:disabled:hover { background: rgba(29,185,84,0.06); color: #1DB954; }
+  .spotify-quem { font-size: 11.5px; color: var(--text-faint); text-align: center; }
+
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #06210F; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: -1px; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
@@ -342,6 +354,11 @@
         <option value="public">Pública</option>
       </select>
       <button class="youtube" id="youtube-btn" disabled>Criar playlist de verdade no YouTube</button>
+      <div class="spotify-block" id="spotify-block" hidden>
+        <a class="spotify-login" id="spotify-login" href="/login/spotify" hidden>Entrar com Spotify</a>
+        <button class="spotify" id="spotify-btn" hidden disabled>Criar no Spotify</button>
+        <span class="spotify-quem" id="spotify-quem"></span>
+      </div>
     </section>
 
     <section class="panel result-panel">
@@ -643,8 +660,55 @@
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  const spotifyBlock = document.getElementById("spotify-block");
+  const spotifyLogin = document.getElementById("spotify-login");
+  const spotifyBtn = document.getElementById("spotify-btn");
+  const spotifyQuem = document.getElementById("spotify-quem");
+  let spotifyLogado = false;
+
+  async function checarSpotify() {
+    try {
+      const st = await (await fetch("/api/spotify/status")).json();
+      // O bloco só aparece se credenciais existirem: sem app registrado, o
+      // botão só frustraria.
+      spotifyBlock.hidden = !st.configurado;
+      if (!st.configurado) return;
+      spotifyLogado = st.logado;
+      spotifyLogin.hidden = st.logado;
+      spotifyBtn.hidden = !st.logado;
+      spotifyQuem.textContent = st.logado ? `conectado como ${st.nome}` : "";
+      spotifyBtn.disabled = !ultimaPreview;
+    } catch (e) { spotifyBlock.hidden = true; }
+  }
+
+  spotifyBtn.addEventListener("click", async () => {
+    if (!ultimaPreview) return;
+    spotifyBtn.disabled = true;
+    spotifyBtn.innerHTML = '<span class="spinner"></span>Criando no Spotify...';
+    try {
+      const resp = await fetch("/api/criar-spotify", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ palavras: ultimaPreview.palavras, track_ids: ultimaPreview.track_ids,
+                               publica: privacidadeSelect.value === "public" }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.erro || "Erro desconhecido");
+      const falta = data.indisponiveis
+        ? `<div class="aviso">${data.indisponiveis} faixa(s) não estão disponíveis na sua conta e ficaram de fora.</div>` : "";
+      resultArea.insertAdjacentHTML("afterbegin",
+        `<div class="youtube-box">Playlist criada no Spotify com ${data.adicionadas} de ${data.total} faixas: ` +
+        `<a href="${data.url}" target="_blank" rel="noopener noreferrer">${data.url}</a>${falta}</div>`);
+    } catch (e) {
+      resultArea.insertAdjacentHTML("afterbegin", `<div class="youtube-box aviso">Erro no Spotify: ${escapeHtml(e.message)}</div>`);
+    } finally {
+      spotifyBtn.disabled = false;
+      spotifyBtn.textContent = "Criar no Spotify";
+    }
+  });
+
   async function iniciar() {
     montarStepper();
+    checarSpotify();
     const resp = await fetch("/api/vocabulario");
     const data = await resp.json();
     Object.keys(data.moods).forEach((key) => {
@@ -791,6 +855,7 @@
     }
     previewBtn.disabled = selected.length === 0;
     youtubeBtn.disabled = true;
+    if (spotifyBtn) spotifyBtn.disabled = true;
     ultimaPreview = null;
     faixaInicial = null;  // candidatas mudam com o clima; o id antigo não existe mais
   }
@@ -858,6 +923,7 @@
         b.addEventListener("click", () => { faixaInicial = b.dataset.seed; gerarPreview(); });
       });
       quotaCostEl.textContent = data.custo_cota.toLocaleString("pt-BR") + " / 10.000 unid.";
+      if (spotifyLogado) spotifyBtn.disabled = false;
       resultHint.textContent = data.limitado_por_cota
         ? `A playlist parou em ${data.faixas.length} faixas (${data.duracao_total}): é o teto por causa da cota do YouTube.`
         : "Prévia gerada. A estrela ☆ troca a faixa que abre a playlist. Se estiver boa, pode criar no YouTube.";
