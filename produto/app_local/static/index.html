@@ -294,6 +294,15 @@
   .spotify:disabled { opacity: 0.4; cursor: not-allowed; background: rgba(29,185,84,0.06); }
   .spotify:disabled:hover { background: rgba(29,185,84,0.06); color: #1DB954; }
   .spotify-quem { font-size: 11.5px; color: var(--text-faint); text-align: center; }
+  .spotify-toast {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%) translateY(-8px);
+    z-index: 50; padding: 12px 18px; border-radius: 12px; font-size: 13px; font-weight: 700;
+    box-shadow: 0 16px 34px -14px rgba(0,0,0,0.85); opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease; max-width: 90vw; text-align: center;
+  }
+  .spotify-toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .spotify-toast.ok { background: rgba(29,185,84,0.16); border: 1px solid #1DB954; color: #1DB954; }
+  .spotify-toast.erro { background: rgba(231,137,124,0.14); border: 1px solid var(--bad); color: var(--bad); }
 
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #06210F; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: -1px; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -302,6 +311,7 @@
 <body>
 <div class="page">
   <div class="glow"></div>
+  <div class="spotify-toast" id="spotify-toast"></div>
 
   <div class="masthead">
     <div class="brand-lockup">
@@ -706,8 +716,32 @@
     }
   });
 
+  function tratarRetornoSpotify() {
+    const params = new URLSearchParams(location.search);
+    const resultado = params.get("spotify");
+    if (!resultado) return;
+
+    // Limpa o parâmetro da URL para um F5 não repetir a mensagem.
+    const url = new URL(location); url.searchParams.delete("spotify"); history.replaceState({}, "", url);
+
+    const MENSAGENS = {
+      ok: { texto: "Conectado ao Spotify.", tipo: "ok" },
+      negado: { texto: "Login com Spotify cancelado.", tipo: "erro" },
+      falhou: { texto: "Não consegui concluir o login com o Spotify. Tente de novo.", tipo: "erro" },
+      estado_invalido: { texto: "O login expirou ou foi aberto duas vezes. Clique em Entrar novamente.", tipo: "erro" },
+      ja_em_andamento: { texto: "Já tinha um login com Spotify em andamento — comece de novo pelo botão.", tipo: "erro" },
+    };
+    const msg = MENSAGENS[resultado];
+    if (!msg) return;
+    const toast = document.getElementById("spotify-toast");
+    toast.textContent = msg.texto;
+    toast.className = `spotify-toast on ${msg.tipo}`;
+    setTimeout(() => toast.classList.remove("on"), 5000);
+  }
+
   async function iniciar() {
     montarStepper();
+    tratarRetornoSpotify();
     checarSpotify();
     const resp = await fetch("/api/vocabulario");
     const data = await resp.json();

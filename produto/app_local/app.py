@@ -217,31 +217,48 @@ def spotify_status():
         token, atualizado = spotify.token_valido(dados)
         session["spotify"] = atualizado
         return jsonify({"configurado": True, "logado": True, **spotify.perfil(token)})
-    except spotify.SpotifyErro:
-        session.pop("spotify", None)  # token morto: força novo login
+    except spotify.SpotifyErro as e:
+        print(f"  [spotify status] token morto, forçando novo login: {e}", flush=True)
+        session.pop("spotify", None)
         return jsonify({"configurado": True, "logado": False})
 
 
 @app.route("/login/spotify")
 def spotify_login():
+    # Clicar "Entrar" duas vezes (ou usar o botão voltar) sobrescrevia o state
+    # da tentativa em andamento — quando essa completava, o valor não batia mais
+    # e o callback recusava com "estado_invalido" mesmo com login correto.
+    if "spotify_state" in session:
+        return redirect("/spotify-processando")
     estado = secrets.token_urlsafe(16)
     session["spotify_state"] = estado
     try:
         return redirect(spotify.url_autorizacao(estado))
     except spotify.SpotifyNaoConfigurado as e:
+        session.pop("spotify_state", None)
         return jsonify({"erro": str(e)}), 503
+
+
+@app.route("/spotify-processando")
+def spotify_processando():
+    return redirect("/?spotify=ja_em_andamento")
 
 
 @app.route("/callback")
 def spotify_callback():
+    # A tentativa termina aqui de qualquer jeito: state consumido de uma vez,
+    # sucesso ou falha, para nunca sobrar preso numa sessão para sempre.
+    esperado = session.pop("spotify_state", None)
     if request.args.get("error"):
+        print(f"  [spotify callback] usuário negou: {request.args.get('error')}", flush=True)
         return redirect("/?spotify=negado")
-    # O state impede que outra página dispare o callback com um código alheio.
-    if not request.args.get("state") or request.args["state"] != session.pop("spotify_state", None):
+    if not request.args.get("state") or request.args["state"] != esperado:
+        print("  [spotify callback] state não bate (login duplicado ou expirado)", flush=True)
         return redirect("/?spotify=estado_invalido")
     try:
         session["spotify"] = spotify.trocar_codigo(request.args["code"])
-    except (spotify.SpotifyErro, spotify.SpotifyNaoConfigurado):
+    except (spotify.SpotifyErro, spotify.SpotifyNaoConfigurado) as e:
+        print(f"  [spotify callback] troca de código falhou: {e}", flush=True)
         return redirect("/?spotify=falhou")
     return redirect("/?spotify=ok")
 
