@@ -417,7 +417,7 @@
         </div>
       </div>
 
-      <button class="primary" id="preview-btn" disabled>Pré-visualizar</button>
+      <button class="primary" id="preview-btn" disabled>Pré-visualizar (grátis)</button>
 
       <select class="privacidade" id="privacidade">
         <option value="unlisted">Não listada (link compartilhável)</option>
@@ -887,16 +887,23 @@
     render();
   });
 
+  let seedBuscaToken = 0;
   seedInput.addEventListener("input", () => {
     clearTimeout(seedDebounce);
     const q = seedInput.value.trim();
     if (q.length < 2) { esconderResultadosBusca(); return; }
+    const meuToken = ++seedBuscaToken;
     seedDebounce = setTimeout(async () => {
       try {
         const resp = await fetch("/api/buscar-faixa?q=" + encodeURIComponent(q));
         const data = await resp.json();
+        // Descarta se uma busca mais nova já começou nesse meio-tempo -- sem
+        // isso, uma resposta lenta de uma consulta antiga podia sobrescrever
+        // (ou reabrir) o resultado de uma consulta mais recente (achado da
+        // revisão do #2).
+        if (meuToken !== seedBuscaToken) return;
         renderResultadosBusca(data.faixas || []);
-      } catch (e) { esconderResultadosBusca(); }
+      } catch (e) { if (meuToken === seedBuscaToken) esconderResultadosBusca(); }
     }, 250);
   });
   document.addEventListener("click", (e) => {
@@ -1141,7 +1148,13 @@
       // /api/criar-youtube recebe. Sem isso a criação regeraria a playlist e
       // poderia divergir do que está na tela.
       ultimaPreview = { palavras: [...selected], track_ids: data.faixas.map((t) => t.track_id) };
-      faixaInicial = data.faixa_inicial;
+      // NÃO reatribui faixaInicial aqui. O motor é 100% determinístico (sem
+      // aleatoriedade em selecionar_candidatas/sequenciar): regenerar sem
+      // semente já reproduz o mesmo primeiro candidato de antes. Reatribuir
+      // criava uma semente IMPLÍCITA que sobrevivia a trocas de clima/modo
+      // (a mesma regra que faz a semente EXPLÍCITA persistir) sem nunca
+      // mostrar o chip nem passar pelo filtro de compatibilidade do #3 --
+      // achado pela revisão de código do #2, não por mim.
       const comboLabel = selected.map((k) => MOOD_LABELS[k]).join(" + ");
       resultArea.innerHTML = renderTracklist(data.faixas, comboLabel, data.duracao_total);
       resultArea.querySelectorAll(".track-row").forEach((row, i) => {
@@ -1153,8 +1166,10 @@
         // pela revisão de código do ticket #1 -- antes, clicar na estrela
         // trocava faixaInicial sem atualizar (ou sem nunca ter mostrado) o
         // chip, então não havia como ver ou limpar a semente forçada.
-        b.addEventListener("click", () => {
-          escolherSemente(b.dataset.seed, b.dataset.nome, b.dataset.artista);
+        b.addEventListener("click", async () => {
+          // await: sem isso, gerarPreview() rodava com a seleção de moods
+          // ainda não podada pela nova semente (achado da revisão do #2).
+          await escolherSemente(b.dataset.seed, b.dataset.nome, b.dataset.artista);
           gerarPreview();
         });
       });
