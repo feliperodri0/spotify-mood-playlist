@@ -43,6 +43,39 @@ def penalidade_harmonica(a, b):
     return 0.5
 
 
+NOME_PT = {
+    "energy": "energia", "valence": "felicidade", "danceability": "dançabilidade",
+    "acousticness": "acústica", "instrumentalness": "instrumental", "speechiness": "fala",
+}
+
+
+class MoodsContraditorios(Exception):
+    """Duas palavras pedidas se contradizem: uma exige uma característica alta e
+    a outra exige a mesma característica baixa.
+
+    Erguida em vez de devolver silenciosamente faixas do centro do acervo. Com a
+    regra da média (anterior), `Feliz + Melancolico` devolvia energy 0,55 /
+    valence 0,50 — exatamente a média do catálogo, que não é nem uma coisa nem
+    outra. Falhar alto e explicar é um produto melhor que acertar por fora.
+
+    O teste é feito sobre as ÂNCORAS, não sobre o resultado da busca: contradição
+    é uma propriedade do vocabulário. Tentativas de detectá-la pela geometria do
+    resultado (distância mediana ao catálogo, razão contra o que a palavra entrega
+    sozinha) foram medidas e não separam os casos — em 6 dimensões a distância
+    dilui a palavra: `Calmo+Instrumental` (compatível) aparece 12,8x pior que
+    sozinho, enquanto `Feliz+Melancolico` (impossível) aparece 6,8x."""
+
+    def __init__(self, palavra_a, palavra_b, caracteristicas):
+        self.palavra_a, self.palavra_b = palavra_a, palavra_b
+        self.caracteristicas = caracteristicas
+        traduzidas = " e ".join(NOME_PT.get(f, f) for f in caracteristicas)
+        alta, baixa = ("altas", "baixas") if len(caracteristicas) > 1 else ("alta", "baixa")
+        super().__init__(
+            f"{palavra_a} e {palavra_b} se contradizem: um pede {traduzidas} {alta}, "
+            f"o outro pede {baixa}. Nenhuma música do catálogo é as duas."
+        )
+
+
 class PipelineMood:
     """Carrega o catálogo + artefatos da Fase 2 uma única vez e expõe
     seleção de candidatas + sequenciamento prontos pra uso."""
@@ -71,26 +104,60 @@ class PipelineMood:
 
         self.df["camelot"] = self.df.apply(lambda r: camelot(int(r["key"]), int(r["mode"])), axis=1)
 
+        # Perfil de cada âncora: para cada feature, a palavra pede "alto", "baixo"
+        # ou não se importa. Base do teste de contradição (ver MoodsContraditorios).
+        baixo, alto = self.df[self.features].quantile(0.33), self.df[self.features].quantile(0.66)
+        self.perfil_ancoras = {
+            palavra: {
+                f: ("alto" if v > alto[f] else "baixo" if v < baixo[f] else None)
+                for f, v in self.vocab_df.loc[palavra, self.features].items()
+            }
+            for palavra in self.vocabulario
+        }
+
     def selecionar_candidatas(self, palavras, n=20):
-        """Busca vizinhos em excesso e deduplica por (track_name, artists) — necessário porque
-        o catálogo tem duplicatas por track_id repetido em gênero (Passo 2.2 do EDA) e músicas
-        reeditadas sob track_id diferente (~9,4% do catálogo, achado da Fase 3). Se o multiplicador
-        inicial não trouxer candidatas únicas suficientes, a busca escalona (dobra o raio) em vez
-        de silenciosamente devolver menos faixas que o pedido."""
+        """Candidatas que atendem **todas** as palavras pedidas, não a média delas.
+
+        Antes: o alvo era o ponto médio entre as âncoras. Isso dissolvia a palavra
+        — medido no produto, `Calmo + Instrumental` devolvia instrumentalness média
+        0,118 (contra 0,711 quando `Instrumental` vai sozinho), porque o ponto médio
+        entre "instrumental" e "não instrumental" é "meio instrumental", que na
+        prática é o centro do catálogo. Com 3 palavras piorava: 0,055.
+
+        Agora: cada candidata é ranqueada pela distância à âncora **mais distante**
+        (pior caso). Uma faixa só sobe se estiver razoavelmente perto de todas as
+        palavras. Com uma palavra só, isso é idêntico ao k-NN de antes.
+
+        A deduplicação por (track_name, artists) e o escalonamento da busca seguem
+        iguais — resolvem duplicatas de catálogo (~9,4%), não têm relação com esta
+        mudança."""
+        self.verificar_contradicao(palavras)
         indices_ancoras = [self.vocab_df.index.get_loc(p) for p in palavras]
-        alvo = self.vocab_X[indices_ancoras].mean(axis=0).reshape(1, -1)
+        ancoras = self.vocab_X[indices_ancoras]
 
         multiplicador = 6
         while True:
             k = min(n * multiplicador, len(self.df))
-            distancias, indices = self.knn.kneighbors(alvo, n_neighbors=k)
+            # Um pool por âncora (o índice k-NN segue sendo o que busca), unidos e
+            # depois reordenados pelo pior caso. Buscar em torno da média não serve:
+            # a região do meio pode não conter nenhuma faixa boa para as duas palavras.
+            pool = set()
+            for ancora in ancoras:
+                _, indices = self.knn.kneighbors(ancora.reshape(1, -1), n_neighbors=k)
+                pool.update(int(i) for i in indices[0])
+            pool = np.fromiter(pool, dtype=int, count=len(pool))
+
+            distancias = cdist(self.X[pool], ancoras)
+            pior_caso = distancias.max(axis=1)
+            ordenados = pool[np.argsort(pior_caso, kind="stable")]
+
             vistos, idx_finais = set(), []
-            for idx_faixa in indices[0]:
+            for idx_faixa in ordenados:
                 linha = self.df.iloc[idx_faixa]
                 chave = (linha["track_name"], linha["artists"])
                 if chave not in vistos:
                     vistos.add(chave)
-                    idx_finais.append(idx_faixa)
+                    idx_finais.append(int(idx_faixa))
                 if len(idx_finais) == n:
                     break
             if len(idx_finais) == n or k >= len(self.df):
@@ -98,6 +165,35 @@ class PipelineMood:
             multiplicador *= 2
 
         return self.df.iloc[idx_finais].reset_index(drop=True), self.X[idx_finais]
+
+    def verificar_contradicao(self, palavras):
+        """Ergue MoodsContraditorios se duas das palavras pedidas exigem lados
+        opostos da mesma característica. Barato: só olha as âncoras."""
+        for i, a in enumerate(palavras):
+            for b in palavras[i + 1:]:
+                opostas = [
+                    f for f in self.features
+                    if {self.perfil_ancoras[a][f], self.perfil_ancoras[b][f]} == {"alto", "baixo"}
+                ]
+                if opostas:
+                    raise MoodsContraditorios(a, b, opostas)
+
+    def combinacoes_possiveis(self):
+        """Pares de palavras que NÃO se contradizem — o front usa para desabilitar
+        as opções impossíveis antes do clique, em vez de errar depois."""
+        return {
+            palavra: sorted(
+                outra for outra in self.vocabulario
+                if outra != palavra and not self._conflito(palavra, outra)
+            )
+            for palavra in self.vocabulario
+        }
+
+    def _conflito(self, a, b):
+        return any(
+            {self.perfil_ancoras[a][f], self.perfil_ancoras[b][f]} == {"alto", "baixo"}
+            for f in self.features
+        )
 
     def sequenciar(self, candidatas, X_candidatas, peso_tempo=0.5, peso_harmonico=1.0):
         n = len(candidatas)

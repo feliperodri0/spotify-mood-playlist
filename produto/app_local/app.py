@@ -26,7 +26,7 @@ PROJETO = PRODUTO.parent             # semana2Spotify/
 ENTREGAS = PROJETO / "entregas"      # onde ficam os notebooks e os dados gerados por eles
 sys.path.insert(0, str(PRODUTO))
 
-from motor_playlist import PipelineMood  # noqa: E402
+from motor_playlist import MoodsContraditorios, PipelineMood  # noqa: E402
 from youtube_playlist_oauth import autenticar, buscar_video_id, criar_playlist_youtube  # noqa: E402
 from googleapiclient.discovery import build  # noqa: E402
 
@@ -65,6 +65,9 @@ def vocabulario():
                 }
                 for palavra in pipeline.vocabulario
             },
+            # Quais palavras combinam com quais: o front desabilita as impossíveis
+            # antes do clique, em vez de deixar o usuário errar e receber erro.
+            "combinacoes": pipeline.combinacoes_possiveis(),
             "tamanho_maximo": TAMANHO_MAXIMO,
         }
     )
@@ -83,7 +86,10 @@ def preview():
     if not (1 <= n <= TAMANHO_MAXIMO):
         return jsonify({"erro": f"n precisa estar entre 1 e {TAMANHO_MAXIMO}."}), 400
 
-    playlist = pipeline.gerar_playlist(palavras, n=n)
+    try:
+        playlist = pipeline.gerar_playlist(palavras, n=n)
+    except MoodsContraditorios as e:
+        return jsonify({"erro": str(e)}), 400
     return jsonify({"faixas": PipelineMood.playlist_para_registros(playlist), "custo_cota": custo_cota(n)})
 
 
@@ -101,7 +107,10 @@ def criar_youtube():
     if privacidade not in ("private", "unlisted", "public"):
         return jsonify({"erro": "privacidade inválida."}), 400
 
-    playlist = pipeline.gerar_playlist(palavras, n=n)
+    try:
+        playlist = pipeline.gerar_playlist(palavras, n=n)
+    except MoodsContraditorios as e:
+        return jsonify({"erro": str(e)}), 400
 
     try:
         creds = autenticar()
