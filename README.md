@@ -2,6 +2,8 @@
 
 Projeto CBL (Challenge Based Learning) da Residência em TIC — Sistemas de Machine Learning. Pipeline completo, do EDA até um protótipo funcional, para gerar playlists por mood com transições suaves a partir do [Spotify Tracks Dataset](dataset.csv) (113.549 faixas após limpeza).
 
+> **Primeira vez aqui? Leia [`COMECE_AQUI.md`](COMECE_AQUI.md).** Explica o projeto inteiro em linguagem simples, sem precisar atravessar os 13 documentos de `docs/`.
+
 ## Estrutura
 
 ```
