@@ -172,6 +172,7 @@
   .track-row .seed-btn:hover { color: var(--accent-1); border-color: var(--accent-1); }
   .track-row.is-seed .seed-btn { color: #0A0F09; background: var(--accent-1); border-color: transparent; cursor: default; }
   .track-sub .dur::before { content: "· "; }
+  .result-header .seed-hint { display: block; margin-top: 3px; color: var(--text-faint); }
   .track-sub .dur { color: var(--text-faint); }
 
   .size-stepper { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
@@ -677,26 +678,46 @@
     });
   }
 
+  function valorAtual() { return modo === "tempo" ? minutos : tamanho; }
+
   function montarStepper() {
-    TAMANHOS.forEach((n) => {
+    stepperEl.innerHTML = "";
+    const valores = modo === "tempo" ? DURACOES : TAMANHOS;
+    sizeLabelEl.textContent = modo === "tempo" ? "Duração da playlist" : "Faixas na playlist";
+    valores.forEach((v) => {
       const el = document.createElement("div");
-      el.className = "size-pill" + (n === tamanho ? " selected" : "");
-      el.textContent = n;
+      el.className = "size-pill";
+      el.textContent = modo === "tempo" ? `${v} min` : v;
+      el.dataset.valor = v;
       el.setAttribute("role", "button");
       el.setAttribute("tabindex", "0");
-      el.addEventListener("click", () => { tamanho = n; atualizarStepper(); });
-      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tamanho = n; atualizarStepper(); } });
+      const escolher = () => { if (modo === "tempo") minutos = v; else tamanho = v; atualizarStepper(); };
+      el.addEventListener("click", escolher);
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); escolher(); } });
       stepperEl.appendChild(el);
     });
     atualizarStepper();
   }
 
   function atualizarStepper() {
-    [...stepperEl.children].forEach((el) => el.classList.toggle("selected", Number(el.textContent) === tamanho));
-    quotaCostEl.textContent = (CUSTO_FIXO + CUSTO_POR_FAIXA * tamanho).toLocaleString("pt-BR") + " / 10.000 unid.";
+    [...stepperEl.children].forEach((el) => el.classList.toggle("selected", Number(el.dataset.valor) === valorAtual()));
+    // Por duração o número de faixas só se sabe depois de gerar: a cota vai como
+    // estimativa pela mediana do catálogo e é corrigida quando a prévia volta.
+    const faixasEstimadas = modo === "tempo" ? Math.round(minutos / DURACAO_MEDIA_MIN) : tamanho;
+    const custo = CUSTO_FIXO + CUSTO_POR_FAIXA * Math.min(faixasEstimadas, 30);
+    quotaCostEl.textContent = (modo === "tempo" ? "~" : "") + custo.toLocaleString("pt-BR") + " / 10.000 unid.";
     youtubeBtn.disabled = true;
     ultimaPreview = null;
   }
+
+  modoSwitchEl.querySelectorAll(".modo-opt").forEach((botao) => {
+    botao.addEventListener("click", () => {
+      modo = botao.dataset.modo;
+      modoSwitchEl.querySelectorAll(".modo-opt").forEach((x) => x.classList.toggle("selected", x === botao));
+      faixaInicial = null;  // a semente vinha do conjunto de candidatas anterior
+      montarStepper();
+    });
+  });
 
   /* Devolve o clima já escolhido que impede este, ou null se ele estiver livre.
      Só olha quem NÃO está selecionado — desmarcar é sempre permitido. */
@@ -780,7 +801,8 @@
     const dicaOrdem = `As faixas não vêm na ordem em que foram encontradas: o algoritmo as reordena para que cada uma emende na seguinte, minimizando ao mesmo tempo a diferença de andamento e a distância harmônica. Salto médio nesta playlist: ${saltoMedio.toFixed(1)} BPM.`;
     let html = `<div class="result-header">
         <div class="combo"><span class="n num">${faixas.length}</span> faixas${duracaoTotal ? ` · <span class="n num">${duracaoTotal}</span>` : ""} · ${comboLabel}</div>
-        <div class="meta tip tip-right" tabindex="0" data-tip="${escapeHtml(dicaOrdem)}">sequenciado por transição suave ⓘ</div>
+        <div class="meta"><span class="tip" tabindex="0" data-tip="${escapeHtml(dicaOrdem)}">sequenciado por transição suave ⓘ</span>
+          <span class="seed-hint">☆ define a faixa inicial</span></div>
       </div><div class="tracklist">`;
     faixas.forEach((t, i) => {
       const yt = linkYoutube(t.track_name, t.artists);
