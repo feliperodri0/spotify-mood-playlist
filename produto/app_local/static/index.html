@@ -107,6 +107,19 @@
     border-color: var(--tile-color); background: var(--surface-2);
     box-shadow: 0 0 0 1px var(--tile-color), 0 8px 22px -10px var(--tile-color);
   }
+  /* Clima incompatível com o que já foi escolhido: apagado, riscado e inerte.
+     A regra vem do backend (/api/vocabulario -> combinacoes), não é fixa aqui. */
+  .mood-tile.blocked { opacity: 0.3; cursor: not-allowed; filter: saturate(0.15); }
+  .mood-tile.blocked:hover { border-color: var(--border); box-shadow: none; }
+  .mood-tile.blocked .label { text-decoration: line-through; text-decoration-color: var(--text-faint); }
+  .mood-tile.blocked .order { opacity: 1; transform: scale(1); background: transparent; color: var(--text-faint); font-size: 13px; }
+  .conflict-note {
+    display: none; align-items: center; gap: 7px; margin-top: 10px; padding: 9px 12px;
+    background: color-mix(in oklch, var(--bad) 12%, transparent); border: 1px solid color-mix(in oklch, var(--bad) 35%, transparent);
+    border-radius: 12px; color: var(--bad); font-size: 12.5px; line-height: 1.4;
+  }
+  .conflict-note.on { display: flex; }
+
   .mood-tile .icon {
     width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
     color: var(--tile-color); background: color-mix(in oklch, var(--tile-color) 18%, transparent);
@@ -244,13 +257,14 @@
   <div class="layout">
     <section class="panel">
       <h2>Escolha o clima</h2>
-      <p class="hint">Toque em até 3. A cor de cada card reflete a energia e a valência médias das faixas daquele clima.</p>
+      <p class="hint">Toque em até 3. Climas opostos se desabilitam sozinhos — não existe música que seja as duas coisas ao mesmo tempo. A cor de cada card reflete a energia e a valência médias das faixas daquele clima.</p>
 
       <div class="mood-grid" id="mood-grid"></div>
 
       <p class="same-note">"Calmo" e "Acústico" têm exatamente a mesma energia/valência médias — por isso a mesma cor. O que os diferencia de verdade é o quanto a faixa é acústica, um eixo que não aparece aqui.</p>
 
       <div class="selection-row" id="selection-row"><span class="placeholder-chip">Nenhum clima selecionado ainda</span></div>
+      <div class="conflict-note" id="conflict-note"></div>
 
       <div class="gauge-block" id="gauge-block">
         <div class="gauge-row"><span class="gauge-label">Energia</span><div class="gauge-track"><div class="gauge-fill" id="gauge-energy"></div></div></div>
@@ -535,6 +549,10 @@
   const hasGsap = typeof gsap !== "undefined";
   let selected = [];
   let vocabMeta = {};
+  // Quais climas combinam com quais. Vem do backend, que deriva das âncoras:
+  // duas palavras se contradizem quando pedem lados opostos da mesma
+  // característica (Feliz pede felicidade alta, Melancólico pede baixa).
+  let compativeis = {};
   let tamanho = 15;
   let ultimaPreview = null;
   const tileEls = {};
@@ -554,6 +572,7 @@
     Object.keys(data.moods).forEach((key) => {
       vocabMeta[key] = { energy: data.moods[key].energy, valence: data.moods[key].valence };
     });
+    compativeis = data.combinacoes || {};
     montarGrid();
   }
 
@@ -602,10 +621,39 @@
     ultimaPreview = null;
   }
 
+  /* Devolve o clima já escolhido que impede este, ou null se ele estiver livre.
+     Só olha quem NÃO está selecionado — desmarcar é sempre permitido. */
+  function conflitoCom(key) {
+    if (selected.includes(key)) return null;
+    const lista = compativeis[key];
+    if (!lista) return null;
+    return selected.find((escolhido) => !lista.includes(escolhido)) || null;
+  }
+
+  function recusar(el, mensagem) {
+    const nota = document.getElementById("conflict-note");
+    nota.innerHTML = mensagem;
+    nota.classList.add("on");
+    clearTimeout(recusar.timer);
+    recusar.timer = setTimeout(() => nota.classList.remove("on"), 5000);
+    if (hasGsap) gsap.fromTo(el, { x: -4 }, { x: 0, duration: 0.4, ease: "elastic.out(1, 0.3)" });
+  }
+
   function toggle(key) {
     const idx = selected.indexOf(key);
-    if (idx >= 0) selected.splice(idx, 1);
-    else { if (selected.length >= 3) return; selected.push(key); }
+    if (idx >= 0) {
+      selected.splice(idx, 1);
+    } else {
+      const impede = conflitoCom(key);
+      if (impede) {
+        return recusar(tileEls[key],
+          `<b>${MOOD_LABELS[key]}</b> e <b>${MOOD_LABELS[impede]}</b> se contradizem — nenhuma música do catálogo é as duas. Desmarque ${MOOD_LABELS[impede]} para escolher este.`);
+      }
+      if (selected.length >= 3) {
+        return recusar(tileEls[key], "Três climas é o limite. Desmarque um para trocar.");
+      }
+      selected.push(key);
+    }
     render();
     if (hasGsap) {
       const el = tileEls[key];
@@ -618,10 +666,16 @@
       const el = tileEls[key];
       if (!el) return;
       const pos = selected.indexOf(key);
+      const impede = conflitoCom(key);
+      const cheio = pos < 0 && !impede && selected.length >= 3;
       el.classList.toggle("selected", pos >= 0);
+      el.classList.toggle("blocked", Boolean(impede) || cheio);
       el.setAttribute("aria-pressed", String(pos >= 0));
-      el.querySelector(".order").textContent = pos >= 0 ? String(pos + 1) : "";
+      el.setAttribute("aria-disabled", String(Boolean(impede) || cheio));
+      el.title = impede ? `Não combina com ${MOOD_LABELS[impede]}` : cheio ? "Limite de 3 climas" : "";
+      el.querySelector(".order").textContent = pos >= 0 ? String(pos + 1) : impede ? "✕" : "";
     });
+    if (selected.length === 0) document.getElementById("conflict-note").classList.remove("on");
 
     if (selected.length === 0) {
       selectionRow.innerHTML = '<span class="placeholder-chip">Nenhum clima selecionado ainda</span>';
