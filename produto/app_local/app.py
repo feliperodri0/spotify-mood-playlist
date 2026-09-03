@@ -27,7 +27,9 @@ ENTREGAS = PROJETO / "entregas"      # onde ficam os notebooks e os dados gerado
 sys.path.insert(0, str(PRODUTO))
 
 from motor_playlist import MoodsContraditorios, PipelineMood  # noqa: E402
-from youtube_playlist_oauth import autenticar, buscar_video_id, criar_playlist_youtube  # noqa: E402
+from youtube_playlist_oauth import (  # noqa: E402
+    CotaEsgotada, autenticar, buscar_video_id, criar_playlist_youtube,
+)
 from googleapiclient.discovery import build  # noqa: E402
 
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -120,21 +122,37 @@ def criar_youtube():
     youtube = build("youtube", "v3", credentials=creds)
 
     video_ids, nao_encontradas = [], []
-    for _, row in playlist.iterrows():
-        vid = buscar_video_id(youtube, row["track_name"], row["artists"])
-        video_ids.append(vid)
-        if vid is None:
-            nao_encontradas.append(f"{row['track_name']} — {row['artists']}")
-
     titulo = f"[Protótipo] {' + '.join(palavras)}"
-    descricao = "Playlist gerada automaticamente (clustering de mood + sequenciamento por transição suave)."
-    url = criar_playlist_youtube(youtube, titulo, descricao, video_ids, privacidade)
+    descricao = "Playlist gerada automaticamente (mood por âncoras + sequenciamento por transição suave)."
+
+    try:
+        for _, row in playlist.iterrows():
+            vid = buscar_video_id(youtube, row["track_name"], row["artists"], row.get("duration_ms"))
+            video_ids.append(vid)
+            if vid is None:
+                nao_encontradas.append(f"{row['track_name']} — {row['artists']}")
+
+        url, adicionadas, falhas_insercao = criar_playlist_youtube(
+            youtube, titulo, descricao, video_ids, privacidade
+        )
+    except CotaEsgotada as e:
+        return jsonify({
+            "erro": f"A cota diária da API do YouTube acabou ({e}). Ela reseta à meia-noite no "
+                    f"horário do Pacífico. Cada faixa custa 100 unidades para buscar e 50 para "
+                    f"inserir, de 10.000 por dia — tente com menos faixas."
+        }), 503
 
     return jsonify(
         {
             "url": url,
             "faixas": PipelineMood.playlist_para_registros(playlist),
             "nao_encontradas": nao_encontradas,
+            # Números honestos: quantas faixas realmente entraram na playlist do
+            # YouTube, não quantas foram geradas. Antes, o front mostrava as 30
+            # geradas mesmo quando só 16 tinham entrado.
+            "adicionadas": adicionadas,
+            "total": len(video_ids),
+            "falhas_insercao": len(falhas_insercao),
         }
     )
 

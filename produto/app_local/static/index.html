@@ -761,11 +761,21 @@
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.erro || "Erro desconhecido");
 
+      // Contagem real primeiro: a playlist do YouTube pode ter menos faixas do
+      // que a prévia mostrou, e antes isso passava despercebido.
       let aviso = "";
-      if (data.nao_encontradas && data.nao_encontradas.length) {
-        aviso = `<div class="aviso">${data.nao_encontradas.length} faixa(s) não encontrada(s) no YouTube: ${escapeHtml(data.nao_encontradas.join("; "))}</div>`;
+      if (data.adicionadas < data.total) {
+        aviso += `<div class="aviso"><b>${data.adicionadas} de ${data.total} faixas entraram.</b>`;
+        if (data.nao_encontradas && data.nao_encontradas.length) {
+          aviso += ` ${data.nao_encontradas.length} não foi/foram encontrada(s) no YouTube: ${escapeHtml(data.nao_encontradas.join("; "))}.`;
+        }
+        if (data.falhas_insercao) {
+          aviso += ` ${data.falhas_insercao} falhou/falharam ao ser inserida(s).`;
+        }
+        aviso += "</div>";
       }
-      const box = `<div class="youtube-box">Playlist criada: <a href="${data.url}" target="_blank" rel="noopener noreferrer">${data.url}</a>${aviso}</div>`;
+      const contagem = data.adicionadas === data.total ? `${data.total} faixas` : `${data.adicionadas} de ${data.total} faixas`;
+      const box = `<div class="youtube-box">Playlist criada com ${contagem}: <a href="${data.url}" target="_blank" rel="noopener noreferrer">${data.url}</a>${aviso}</div>`;
       resultArea.insertAdjacentHTML("afterbegin", box);
     } catch (e) {
       resultArea.insertAdjacentHTML("afterbegin", `<div class="youtube-box aviso">Erro ao criar no YouTube: ${escapeHtml(e.message)}</div>`);

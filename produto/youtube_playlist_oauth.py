@@ -43,6 +43,7 @@ gerar playlists pontuais, escolhidas à mão, para validação por escuta.
 """
 
 import pickle
+import re
 import sys
 from pathlib import Path
 
@@ -90,25 +91,77 @@ def autenticar():
     return creds
 
 
-def buscar_video_id(youtube, track_name, artists):
-    """Busca a faixa no YouTube e devolve o video_id do primeiro resultado (ou None)."""
+class CotaEsgotada(Exception):
+    """A cota diária da YouTube Data API acabou no meio da operação.
+
+    Erguida em vez de devolver None: com None, o laço seguia tentando e cada
+    faixa restante virava uma "não encontrada" silenciosa — o usuário recebia uma
+    playlist pela metade sem saber por quê."""
+
+
+def _e_cota(erro):
+    return erro.resp.status == 403 and b"quota" in erro.content.lower()
+
+
+def buscar_video_id(youtube, track_name, artists, duracao_ms=None):
+    """Devolve o video_id da melhor correspondência, ou None se não houver.
+
+    Pega 5 candidatos (mesmo custo de cota que 1: `search.list` cobra 100
+    unidades por chamada, não por resultado) e, quando a duração da faixa é
+    conhecida, escolhe o de duração mais próxima, descartando quem estiver a mais
+    de 25%. Sem isso, o primeiro resultado do YouTube para "nome artista" pode ser
+    cover, reação, ao vivo ou "10 hours loop" — nada disso é a faixa que as Fases
+    2 e 3 mediram, e a playlist toca outra coisa."""
     consulta = f"{track_name} {artists}"
     try:
         resposta = youtube.search().list(
-            part="id", q=consulta, type="video", maxResults=1
+            part="id", q=consulta, type="video", maxResults=5
         ).execute()
     except HttpError as e:
-        print(f"  [erro na busca] {consulta}: {e}")
+        if _e_cota(e):
+            raise CotaEsgotada(consulta) from e
+        print(f"  [erro na busca] {consulta}: {e}", flush=True)
         return None
 
-    itens = resposta.get("items", [])
-    if not itens:
+    ids = [i["id"]["videoId"] for i in resposta.get("items", []) if i["id"].get("videoId")]
+    if not ids:
         return None
-    return itens[0]["id"]["videoId"]
+    if duracao_ms is None:
+        return ids[0]
+
+    alvo = duracao_ms / 1000
+    try:
+        detalhes = youtube.videos().list(part="contentDetails", id=",".join(ids)).execute()
+    except HttpError as e:
+        if _e_cota(e):
+            raise CotaEsgotada(consulta) from e
+        return ids[0]
+
+    duracoes = {v["id"]: _segundos(v["contentDetails"]["duration"]) for v in detalhes.get("items", [])}
+    melhor, menor_erro = None, None
+    for vid in ids:  # empate resolvido pela ordem de relevância do YouTube
+        d = duracoes.get(vid)
+        if not d:
+            continue
+        erro = abs(d - alvo) / alvo
+        if menor_erro is None or erro < menor_erro:
+            melhor, menor_erro = vid, erro
+    return melhor if melhor and menor_erro <= 0.25 else None
+
+
+def _segundos(iso):
+    m = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", iso or "")
+    if not m:
+        return None
+    h, mi, s = (int(x or 0) for x in m.groups())
+    return h * 3600 + mi * 60 + s
 
 
 def criar_playlist_youtube(youtube, titulo, descricao, video_ids, privacidade="unlisted"):
-    """Cria a playlist e adiciona os vídeos, na ordem recebida. Devolve a URL."""
+    """Cria a playlist e adiciona os vídeos, na ordem recebida.
+
+    Devolve (url, adicionadas, falhas). Antes devolvia só a URL, e o chamador não
+    tinha como saber que a playlist saiu pela metade."""
     playlist = youtube.playlists().insert(
         part="snippet,status",
         body={
@@ -118,8 +171,8 @@ def criar_playlist_youtube(youtube, titulo, descricao, video_ids, privacidade="u
     ).execute()
     playlist_id = playlist["id"]
 
-    adicionadas, nao_encontradas = 0, []
-    for i, video_id in enumerate(video_ids):
+    adicionadas, falhas = 0, []
+    for video_id in video_ids:
         if video_id is None:
             continue
         try:
@@ -129,18 +182,26 @@ def criar_playlist_youtube(youtube, titulo, descricao, video_ids, privacidade="u
                     "snippet": {
                         "playlistId": playlist_id,
                         "resourceId": {"kind": "youtube#video", "videoId": video_id},
-                        "position": i,
+                        # SEM "position": antes era `position: i`, o índice na lista
+                        # completa. Como as faixas não encontradas são puladas, o `i`
+                        # passava a apontar além do fim da playlist e o YouTube
+                        # rejeitava TODAS as inserções seguintes — uma única busca
+                        # falha derrubava todo o resto. Sem o campo, cada item é
+                        # anexado no fim, o que já preserva a ordem relativa.
                     }
                 },
             ).execute()
             adicionadas += 1
         except HttpError as e:
-            print(f"  [erro ao adicionar] video_id={video_id}: {e}")
+            if _e_cota(e):
+                raise CotaEsgotada(f"após {adicionadas} faixas") from e
+            falhas.append(video_id)
+            print(f"  [erro ao adicionar] video_id={video_id}: {e}", flush=True)
 
     url = f"https://www.youtube.com/playlist?list={playlist_id}"
-    print(f"Playlist criada: {adicionadas}/{len(video_ids)} faixas adicionadas")
-    print(f"URL: {url}")
-    return url
+    print(f"Playlist criada: {adicionadas}/{len(video_ids)} faixas adicionadas", flush=True)
+    print(f"URL: {url}", flush=True)
+    return url, adicionadas, falhas
 
 
 def gerar_playlist_youtube_real(palavras, n=15, privacidade="unlisted"):
@@ -158,17 +219,17 @@ def gerar_playlist_youtube_real(palavras, n=15, privacidade="unlisted"):
 
     video_ids = []
     for _, row in playlist.iterrows():
-        vid = buscar_video_id(youtube, row["track_name"], row["artists"])
+        vid = buscar_video_id(youtube, row["track_name"], row["artists"], row.get("duration_ms"))
         video_ids.append(vid)
-        status = vid if vid else "NÃO ENCONTRADA"
-        print(f"  {row['track_name']} — {row['artists']}: {status}")
+        print(f"  {row['track_name']} — {row['artists']}: {vid or 'NÃO ENCONTRADA'}", flush=True)
 
     titulo = f"[Protótipo Fase 5] {' + '.join(palavras)}"
     descricao = (
         "Playlist gerada automaticamente pelo pipeline de mood + transição suave "
         "(Fases 2-3 do projeto CBL). Não editorial — para validação por escuta."
     )
-    return criar_playlist_youtube(youtube, titulo, descricao, video_ids, privacidade)
+    url, _, _ = criar_playlist_youtube(youtube, titulo, descricao, video_ids, privacidade)
+    return url
 
 
 if __name__ == "__main__":
