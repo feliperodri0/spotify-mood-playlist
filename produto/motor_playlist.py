@@ -102,6 +102,8 @@ class PipelineMood:
         X_raw[self.cols_assimetricas] = self.pt.transform(X_raw[self.cols_assimetricas])
         self.X = self.scaler.transform(X_raw[self.features])
 
+        self.duracao_mediana = float(self.df["duration_ms"].median())
+
         self.df["camelot"] = self.df.apply(lambda r: camelot(int(r["key"]), int(r["mode"])), axis=1)
 
         # Perfil de cada âncora: para cada feature, a palavra pede "alto", "baixo"
@@ -195,7 +197,12 @@ class PipelineMood:
             for f in self.features
         )
 
-    def sequenciar(self, candidatas, X_candidatas, peso_tempo=0.5, peso_harmonico=1.0):
+    def sequenciar(self, candidatas, X_candidatas, peso_tempo=0.5, peso_harmonico=1.0, inicio=0):
+        """Ordena as candidatas por transição suave, partindo de `inicio`.
+
+        `inicio` era fixo em 0 (a candidata mais próxima da âncora), o que fazia
+        o mesmo pedido devolver sempre a mesma playlist, byte a byte. Agora é a
+        faixa que o usuário escolheu como ponto de partida."""
         n = len(candidatas)
         custo = cdist(X_candidatas, X_candidatas)
         tempos = candidatas["tempo"].values
@@ -207,7 +214,9 @@ class PipelineMood:
                     custo[i, j] += peso_tempo * dist_tempo[i, j] + peso_harmonico * penalidade_harmonica(
                         camelots[i], camelots[j]
                     )
-        visitado, atual, restante = [0], 0, set(range(1, n))
+        inicio = int(inicio) if 0 <= int(inicio) < n else 0
+        visitado, atual = [inicio], inicio
+        restante = set(range(n)) - {inicio}
         while restante:
             proximo = min(restante, key=lambda j: custo[atual, j])
             visitado.append(proximo)
@@ -215,13 +224,65 @@ class PipelineMood:
             atual = proximo
         return candidatas.iloc[visitado].reset_index(drop=True)
 
-    def gerar_playlist(self, palavras, n=20):
+    def gerar_playlist(self, palavras, n=20, faixa_inicial=None):
+        """Playlist por número de faixas. `faixa_inicial` é um track_id que passa
+        a ser a primeira faixa; ignorado se não estiver entre as candidatas."""
         candidatas, X_cand = self.selecionar_candidatas(palavras, n=n)
-        return self.sequenciar(candidatas, X_cand)
+        return self.sequenciar(candidatas, X_cand, inicio=self._indice_de(candidatas, faixa_inicial))
+
+    def gerar_playlist_por_duracao(self, palavras, minutos, faixa_inicial=None, teto_faixas=30):
+        """Playlist com duração-alvo em vez de contagem de faixas.
+
+        Busca candidatas com folga sobre a estimativa (a duração mediana do
+        catálogo é 3,5 min, mas a variação é grande), ordena por transição suave e
+        corta no prefixo cuja soma chega mais perto do alvo. Aceita passar até 10%
+        do pedido: parar sempre antes fazia "15 minutos" virar 10, o que erra mais
+        do que devolver 16."""
+        alvo_ms = float(minutos) * 60_000
+        # 1,6x de folga: o corte precisa de candidatas sobrando para escolher onde
+        # parar, e candidata extra que não entra não custa nada.
+        estimativa = int(alvo_ms / self.duracao_mediana * 1.6) + 2
+        n = max(2, min(estimativa, teto_faixas))
+
+        candidatas, X_cand = self.selecionar_candidatas(palavras, n=n)
+        ordenada = self.sequenciar(candidatas, X_cand, inicio=self._indice_de(candidatas, faixa_inicial))
+
+        acumulado, melhor_corte, melhor_erro = 0.0, 1, None
+        for i, duracao in enumerate(ordenada["duration_ms"].values):
+            acumulado += duracao
+            if acumulado > alvo_ms * 1.1:
+                break
+            erro = abs(acumulado - alvo_ms)
+            if melhor_erro is None or erro < melhor_erro:
+                melhor_corte, melhor_erro = i + 1, erro
+        return ordenada.iloc[:melhor_corte].reset_index(drop=True)
+
+    @staticmethod
+    def _indice_de(candidatas, track_id):
+        if not track_id:
+            return 0
+        posicoes = candidatas.index[candidatas["track_id"] == track_id].tolist()
+        return int(posicoes[0]) if posicoes else 0
+
+    def faixas_por_id(self, track_ids):
+        """Devolve as faixas na ORDEM dos ids recebidos.
+
+        É o que permite a prévia ser o contrato: o front devolve os track_id que o
+        usuário aprovou e o backend cria exatamente aquilo, em vez de regerar a
+        playlist e torcer para dar igual."""
+        indexado = self.df.set_index("track_id")
+        presentes = [i for i in track_ids if i in indexado.index]
+        return indexado.loc[presentes].reset_index()
 
     @staticmethod
     def playlist_para_registros(playlist):
-        saida = playlist.assign(camelot_str=playlist["camelot"].apply(lambda c: f"{c[0]}{c[1]}"))
-        return saida[["track_name", "artists", "tempo", "track_genre", "mood", "camelot_str"]].rename(
-            columns={"camelot_str": "camelot"}
-        ).to_dict("records")
+        saida = playlist.assign(
+            camelot_str=playlist["camelot"].apply(lambda c: f"{c[0]}{c[1]}"),
+            duracao=playlist["duration_ms"].apply(lambda ms: f"{int(ms) // 60000}:{int(ms) // 1000 % 60:02d}"),
+        )
+        # track_id e duração vão junto: o front precisa do id para escolher a
+        # faixa inicial e para devolver a prévia aprovada na hora de criar.
+        return saida[[
+            "track_id", "track_name", "artists", "tempo", "track_genre", "mood",
+            "camelot_str", "duracao", "duration_ms",
+        ]].rename(columns={"camelot_str": "camelot"}).to_dict("records")

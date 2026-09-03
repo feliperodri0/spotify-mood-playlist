@@ -156,6 +156,24 @@
 
   .size-block { margin-top: 18px; }
   .size-block label { font-size: 12px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  .modo-switch { display: flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 3px; margin-bottom: 12px; }
+  .modo-opt {
+    flex: 1; padding: 8px 6px; border-radius: 9px; border: none; background: transparent; color: var(--text-dim);
+    font-weight: 700; font-size: 12.5px; transition: background 0.15s ease, color 0.15s ease;
+  }
+  .modo-opt:hover { color: var(--text); }
+  .modo-opt.selected { background: var(--accent-grad); color: #06210F; }
+
+  .track-row .seed-btn {
+    flex: none; width: 19px; height: 19px; border-radius: 50%; border: 1px solid var(--border-strong);
+    background: transparent; color: var(--text-faint); font-size: 9px; display: inline-flex;
+    align-items: center; justify-content: center; padding: 0;
+  }
+  .track-row .seed-btn:hover { color: var(--accent-1); border-color: var(--accent-1); }
+  .track-row.is-seed .seed-btn { color: #0A0F09; background: var(--accent-1); border-color: transparent; cursor: default; }
+  .track-sub .dur::before { content: "· "; }
+  .track-sub .dur { color: var(--text-faint); }
+
   .size-stepper { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
   .size-pill {
     flex: 1 1 auto; min-width: 42px; text-align: center; padding: 9px 4px; border-radius: 10px;
@@ -303,7 +321,11 @@
       </div>
 
       <div class="size-block">
-        <label>Faixas na playlist</label>
+        <div class="modo-switch" id="modo-switch">
+          <button class="modo-opt selected" data-modo="faixas">Por faixas</button>
+          <button class="modo-opt" data-modo="tempo">Por duração</button>
+        </div>
+        <label id="size-label">Faixas na playlist</label>
         <div class="size-stepper" id="size-stepper"></div>
         <div class="quota-readout">
           <span>custo estimado no YouTube</span>
@@ -563,6 +585,8 @@
   }
 
   const TAMANHOS = [5, 10, 15, 20, 25, 30];
+  const DURACOES = [15, 30, 45, 60, 90];
+  const DURACAO_MEDIA_MIN = 3.55;  // mediana do catálogo, só para estimar a cota antes da prévia
   const CUSTO_FIXO = 50, CUSTO_POR_FAIXA = 150;
 
   const grid = document.getElementById("mood-grid");
@@ -574,6 +598,8 @@
   const resultArea = document.getElementById("result-area");
   const resultHint = document.getElementById("result-hint");
   const stepperEl = document.getElementById("size-stepper");
+  const sizeLabelEl = document.getElementById("size-label");
+  const modoSwitchEl = document.getElementById("modo-switch");
   const quotaCostEl = document.getElementById("quota-cost");
   const privacidadeSelect = document.getElementById("privacidade");
 
@@ -585,6 +611,9 @@
   // característica (Feliz pede felicidade alta, Melancólico pede baixa).
   let compativeis = {};
   let tamanho = 15;
+  let modo = "faixas";
+  let minutos = 30;
+  let faixaInicial = null;   // track_id escolhido como ponto de partida
   let ultimaPreview = null;
   const tileEls = {};
 
@@ -742,24 +771,29 @@
     previewBtn.disabled = selected.length === 0;
     youtubeBtn.disabled = true;
     ultimaPreview = null;
+    faixaInicial = null;  // candidatas mudam com o clima; o id antigo não existe mais
   }
 
-  function renderTracklist(faixas, comboLabel) {
+  function renderTracklist(faixas, comboLabel, duracaoTotal) {
     const saltos = faixas.slice(0, -1).map((t, i) => Math.abs(t.tempo - faixas[i + 1].tempo));
     const saltoMedio = saltos.length ? saltos.reduce((a, b) => a + b, 0) / saltos.length : 0;
     const dicaOrdem = `As faixas não vêm na ordem em que foram encontradas: o algoritmo as reordena para que cada uma emende na seguinte, minimizando ao mesmo tempo a diferença de andamento e a distância harmônica. Salto médio nesta playlist: ${saltoMedio.toFixed(1)} BPM.`;
     let html = `<div class="result-header">
-        <div class="combo"><span class="n num">${faixas.length}</span> faixas · ${comboLabel}</div>
+        <div class="combo"><span class="n num">${faixas.length}</span> faixas${duracaoTotal ? ` · <span class="n num">${duracaoTotal}</span>` : ""} · ${comboLabel}</div>
         <div class="meta tip tip-right" tabindex="0" data-tip="${escapeHtml(dicaOrdem)}">sequenciado por transição suave ⓘ</div>
       </div><div class="tracklist">`;
     faixas.forEach((t, i) => {
       const yt = linkYoutube(t.track_name, t.artists);
-      html += `<div class="track-row">
+      const ehSemente = i === 0;
+      html += `<div class="track-row${ehSemente ? " is-seed" : ""}">
           <div class="track-idx num">${String(i + 1).padStart(2, "0")}</div>
           <div class="track-info">
             <div class="track-name"><span class="title">${escapeHtml(t.track_name)}</span>
-              <a class="listen" href="${yt}" target="_blank" rel="noopener noreferrer" title="Buscar no YouTube">▶</a></div>
-            <div class="track-sub">${escapeHtml(t.artists)}<span class="genre">${escapeHtml(t.track_genre)}</span></div>
+              <a class="listen" href="${yt}" target="_blank" rel="noopener noreferrer" title="Buscar no YouTube">▶</a>
+              <button class="seed-btn tip" tabindex="0" data-seed="${escapeHtml(t.track_id)}"
+                data-tip="${escapeHtml(ehSemente ? "Esta é a faixa que abre a playlist. O resto foi ordenado a partir dela." : "Começar a playlist por esta faixa. As mesmas músicas serão reordenadas a partir dela.")}"
+                ${ehSemente ? "disabled" : ""}>${ehSemente ? "★" : "☆"}</button></div>
+            <div class="track-sub">${escapeHtml(t.artists)}<span class="genre">${escapeHtml(t.track_genre)}</span><span class="dur num">${escapeHtml(t.duracao)}</span></div>
           </div>
           <div class="badges"><span class="badge camelot tip tip-right" tabindex="0" data-tip="${escapeHtml(dicaCamelot(t.camelot))}">${t.camelot}</span></div>
           <div class="badges"><span class="badge bpm num tip tip-right" tabindex="0" data-tip="${escapeHtml(DICA_BPM)}">${t.tempo.toFixed(0)} BPM</span></div>
@@ -773,24 +807,38 @@
     return html + "</div>";
   }
 
-  previewBtn.addEventListener("click", async () => {
+  async function gerarPreview() {
     previewBtn.disabled = true;
     previewBtn.innerHTML = '<span class="spinner"></span>Gerando...';
     resultArea.innerHTML = '<div class="result-empty">Consultando o backend local...</div>';
     try {
       const resp = await fetch("/api/preview", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ palavras: selected, n: tamanho }),
+        body: JSON.stringify({
+          palavras: selected, modo,
+          n: tamanho, minutos,
+          faixa_inicial: faixaInicial,
+        }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.erro || "Erro desconhecido");
-      ultimaPreview = { palavras: [...selected], n: tamanho };
+      // A prévia vira o contrato: guarda os track_id aprovados, que é o que
+      // /api/criar-youtube recebe. Sem isso a criação regeraria a playlist e
+      // poderia divergir do que está na tela.
+      ultimaPreview = { palavras: [...selected], track_ids: data.faixas.map((t) => t.track_id) };
+      faixaInicial = data.faixa_inicial;
       const comboLabel = selected.map((k) => MOOD_LABELS[k]).join(" + ");
-      resultArea.innerHTML = renderTracklist(data.faixas, comboLabel);
+      resultArea.innerHTML = renderTracklist(data.faixas, comboLabel, data.duracao_total);
       resultArea.querySelectorAll(".track-row").forEach((row, i) => {
         setTimeout(() => row.classList.add("shown"), 20 + i * 35);
       });
-      resultHint.textContent = "Prévia gerada. Se estiver boa, pode criar a playlist de verdade no YouTube.";
+      resultArea.querySelectorAll(".seed-btn[data-seed]").forEach((b) => {
+        b.addEventListener("click", () => { faixaInicial = b.dataset.seed; gerarPreview(); });
+      });
+      quotaCostEl.textContent = data.custo_cota.toLocaleString("pt-BR") + " / 10.000 unid.";
+      resultHint.textContent = data.limitado_por_cota
+        ? `A playlist parou em ${data.faixas.length} faixas (${data.duracao_total}): é o teto por causa da cota do YouTube.`
+        : "Prévia gerada. A estrela ☆ troca a faixa que abre a playlist. Se estiver boa, pode criar no YouTube.";
       youtubeBtn.disabled = false;
     } catch (e) {
       resultArea.innerHTML = `<div class="result-empty">Erro: ${escapeHtml(e.message)}</div>`;
@@ -798,7 +846,9 @@
       previewBtn.disabled = false;
       previewBtn.textContent = "Pré-visualizar (grátis)";
     }
-  });
+  }
+
+  previewBtn.addEventListener("click", () => { faixaInicial = null; gerarPreview(); });
 
   youtubeBtn.addEventListener("click", async () => {
     if (!ultimaPreview) return;
@@ -807,7 +857,7 @@
     try {
       const resp = await fetch("/api/criar-youtube", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ palavras: ultimaPreview.palavras, n: ultimaPreview.n, privacidade: privacidadeSelect.value }),
+        body: JSON.stringify({ palavras: ultimaPreview.palavras, track_ids: ultimaPreview.track_ids, privacidade: privacidadeSelect.value }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.erro || "Erro desconhecido");

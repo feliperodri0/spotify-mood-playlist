@@ -75,44 +75,80 @@ def vocabulario():
     )
 
 
+MINUTOS_MAXIMO = 180
+
+
+def duracao_texto(ms):
+    minutos = int(round(ms / 60000))
+    return f"{minutos // 60}h{minutos % 60:02d}" if minutos >= 60 else f"{minutos} min"
+
+
 @app.route("/api/preview", methods=["POST"])
 def preview():
     corpo = request.get_json(force=True)
     palavras = [p for p in corpo.get("palavras", []) if p in pipeline.vocabulario]
-    n = int(corpo.get("n", 15))
+    modo = corpo.get("modo", "faixas")
+    faixa_inicial = corpo.get("faixa_inicial") or None
 
     if not palavras:
         return jsonify({"erro": "Escolha pelo menos 1 mood válido."}), 400
     if len(palavras) > 3:
         return jsonify({"erro": "Máximo de 3 moods por vez."}), 400
-    if not (1 <= n <= TAMANHO_MAXIMO):
-        return jsonify({"erro": f"n precisa estar entre 1 e {TAMANHO_MAXIMO}."}), 400
+    if modo not in ("faixas", "tempo"):
+        return jsonify({"erro": "modo precisa ser 'faixas' ou 'tempo'."}), 400
 
     try:
-        playlist = pipeline.gerar_playlist(palavras, n=n)
+        if modo == "tempo":
+            minutos = int(corpo.get("minutos", 30))
+            if not (5 <= minutos <= MINUTOS_MAXIMO):
+                return jsonify({"erro": f"A duração precisa estar entre 5 e {MINUTOS_MAXIMO} minutos."}), 400
+            playlist = pipeline.gerar_playlist_por_duracao(
+                palavras, minutos=minutos, faixa_inicial=faixa_inicial, teto_faixas=TAMANHO_MAXIMO
+            )
+        else:
+            n = int(corpo.get("n", 15))
+            if not (1 <= n <= TAMANHO_MAXIMO):
+                return jsonify({"erro": f"n precisa estar entre 1 e {TAMANHO_MAXIMO}."}), 400
+            playlist = pipeline.gerar_playlist(palavras, n=n, faixa_inicial=faixa_inicial)
     except MoodsContraditorios as e:
         return jsonify({"erro": str(e)}), 400
-    return jsonify({"faixas": PipelineMood.playlist_para_registros(playlist), "custo_cota": custo_cota(n)})
+
+    faixas = PipelineMood.playlist_para_registros(playlist)
+    total_ms = int(playlist["duration_ms"].sum())
+    return jsonify({
+        "faixas": faixas,
+        "custo_cota": custo_cota(len(faixas)),
+        "duracao_total_ms": total_ms,
+        "duracao_total": duracao_texto(total_ms),
+        # Quando o alvo de tempo esbarra no teto de faixas (que existe por causa
+        # da cota do YouTube), a playlist sai mais curta que o pedido — e o
+        # usuário precisa saber por quê.
+        "limitado_por_cota": modo == "tempo" and len(faixas) >= TAMANHO_MAXIMO,
+        "faixa_inicial": faixas[0]["track_id"] if faixas else None,
+    })
 
 
 @app.route("/api/criar-youtube", methods=["POST"])
 def criar_youtube():
     corpo = request.get_json(force=True)
     palavras = [p for p in corpo.get("palavras", []) if p in pipeline.vocabulario]
-    n = int(corpo.get("n", 15))
+    track_ids = corpo.get("track_ids") or []
     privacidade = corpo.get("privacidade", "unlisted")
 
     if not palavras:
         return jsonify({"erro": "Escolha pelo menos 1 mood válido."}), 400
-    if not (1 <= n <= TAMANHO_MAXIMO):
-        return jsonify({"erro": f"n precisa estar entre 1 e {TAMANHO_MAXIMO}."}), 400
     if privacidade not in ("private", "unlisted", "public"):
         return jsonify({"erro": "privacidade inválida."}), 400
+    if not (1 <= len(track_ids) <= TAMANHO_MAXIMO):
+        return jsonify({"erro": f"Gere uma prévia primeiro (1 a {TAMANHO_MAXIMO} faixas)."}), 400
 
-    try:
-        playlist = pipeline.gerar_playlist(palavras, n=n)
-    except MoodsContraditorios as e:
-        return jsonify({"erro": str(e)}), 400
+    # A prévia é o contrato: cria exatamente as faixas que o usuário aprovou, na
+    # ordem que ele viu. Antes isto regerava a playlist do zero e só acertava
+    # porque o motor era determinístico — com faixa inicial escolhida pelo
+    # usuário, a prévia e a playlist criada divergiriam sem aviso.
+    playlist = pipeline.faixas_por_id(track_ids)
+    if len(playlist) != len(track_ids):
+        return jsonify({"erro": "A prévia não bate com o catálogo. Gere a prévia de novo."}), 400
 
     try:
         creds = autenticar()

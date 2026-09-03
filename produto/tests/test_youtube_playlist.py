@@ -15,6 +15,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import pandas as pd  # noqa: E402
+
+from motor_playlist import PipelineMood  # noqa: E402
 from youtube_playlist_oauth import criar_playlist_youtube  # noqa: E402
 
 
@@ -73,6 +76,21 @@ def test_conta_o_total_pedido_e_nao_o_adicionado():
     yt = FakePlaylists()
     _, adicionadas, _ = criar_playlist_youtube(yt, "t", "d", [None, None, "a"])
     assert (adicionadas, 3) == (1, 3), "o chamador precisa saber 1 de 3"
+
+
+def test_faixa_inicial_vira_o_indice_certo():
+    """A faixa inicial escolhida pelo usuário chega ao sequenciador como índice."""
+    candidatas = pd.DataFrame({"track_id": ["aa", "bb", "cc"]})
+    assert PipelineMood._indice_de(candidatas, "cc") == 2
+    assert PipelineMood._indice_de(candidatas, "aa") == 0
+
+
+def test_faixa_inicial_ausente_cai_no_zero():
+    """Id de outro conjunto de candidatas (o usuário trocou o clima ou o tamanho)
+    não pode quebrar: volta para o começo, que é o comportamento antigo."""
+    candidatas = pd.DataFrame({"track_id": ["aa", "bb"]})
+    assert PipelineMood._indice_de(candidatas, "nao_existe") == 0
+    assert PipelineMood._indice_de(candidatas, None) == 0
 
 
 if __name__ == "__main__":
