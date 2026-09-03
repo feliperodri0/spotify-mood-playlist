@@ -103,6 +103,14 @@ def buscar_faixa():
     return jsonify({"faixas": pipeline.buscar_faixas(consulta)})
 
 
+@app.route("/api/moods-compativeis")
+def moods_compativeis():
+    """Quais dos 8 moods combinam com a faixa escolhida como semente (ticket
+    #3). Só olha as âncoras contra o vetor da faixa -- não gera candidatas."""
+    track_id = request.args.get("track_id", "")
+    return jsonify({"moods": pipeline.moods_compativeis(track_id, k=3)})
+
+
 @app.route("/api/preview", methods=["POST"])
 def preview():
     corpo = request.get_json(force=True)

@@ -704,6 +704,7 @@
   let minutos = 30;
   let faixaInicial = null;   // track_id escolhido como ponto de partida
   let faixaInicialInfo = null; // {track_name, artists} para mostrar no chip
+  let moodsCompativeisSemente = null; // null = sem semente/sem restrição; array de 3 quando há semente
   let ultimaPreview = null;
   const tileEls = {};
 
@@ -828,7 +829,7 @@
     });
   }
 
-  function escolherSemente(trackId, nome, artista) {
+  async function escolherSemente(trackId, nome, artista) {
     faixaInicial = trackId;
     faixaInicialInfo = { nome, artista };
     seedInput.value = "";
@@ -841,12 +842,49 @@
     ultimaPreview = null;
     youtubeBtn.disabled = true;
     if (spotifyBtn) spotifyBtn.disabled = true;
+    await atualizarCompatibilidadeSemente();
+  }
+
+  /* Ticket #3: busca os moods compatíveis com a semente ativa e estreita a
+     seleção -- mantém o que ainda é válido, tira sozinho o que não é mais,
+     avisando qual e por quê. Nunca zera tudo (decisão explícita: menos
+     disruptivo que forçar escolher de novo do zero). */
+  async function atualizarCompatibilidadeSemente() {
+    if (!faixaInicial) { moodsCompativeisSemente = null; render(); return; }
+    try {
+      const resp = await fetch("/api/moods-compativeis?track_id=" + encodeURIComponent(faixaInicial));
+      const data = await resp.json();
+      moodsCompativeisSemente = data.moods || null;
+    } catch (e) {
+      moodsCompativeisSemente = null;  // API falhou: não bloqueia nada, melhor liberado que travado
+    }
+
+    let mensagemEstreitamento = null, elParaAnimar = null;
+    if (moodsCompativeisSemente) {
+      const removidos = selected.filter((k) => !moodsCompativeisSemente.includes(k));
+      if (removidos.length) {
+        selected = selected.filter((k) => moodsCompativeisSemente.includes(k));
+        const nomes = removidos.map((k) => MOOD_LABELS[k]).join(", ");
+        mensagemEstreitamento =
+          `<b>${nomes}</b> ${removidos.length > 1 ? "não combinam" : "não combina"} com a faixa escolhida como semente e ${removidos.length > 1 ? "foram removidos" : "foi removido"} da seleção.`;
+        elParaAnimar = tileEls[removidos[0]];  // continua válido depois do render(): a referência ao elemento não muda
+      }
+    }
+    // render() ANTES do aviso: ele limpa o toast quando selected fica vazio
+    // (comportamento existente, para climas opostos) -- chamar recusar() depois
+    // garante que o aviso de estreitamento sobrevive mesmo quando a seleção
+    // some inteira (achado ao testar com jsdom: o aviso aparecia e sumia no
+    // mesmo instante).
+    render();
+    if (mensagemEstreitamento) recusar(elParaAnimar, mensagemEstreitamento);
   }
 
   document.getElementById("seed-limpar").addEventListener("click", () => {
     faixaInicial = null;
     faixaInicialInfo = null;
     seedChip.hidden = true;
+    moodsCompativeisSemente = null;  // solta a restrição imediatamente
+    render();
   });
 
   seedInput.addEventListener("input", () => {
@@ -959,6 +997,10 @@
 
   /* Devolve o clima já escolhido que impede este, ou null se ele estiver livre.
      Só olha quem NÃO está selecionado — desmarcar é sempre permitido. */
+  function incompativelComSemente(key) {
+    return moodsCompativeisSemente !== null && !moodsCompativeisSemente.includes(key);
+  }
+
   function conflitoCom(key) {
     if (selected.includes(key)) return null;
     const lista = compativeis[key];
@@ -985,6 +1027,10 @@
         return recusar(tileEls[key],
           `<b>${MOOD_LABELS[key]}</b> e <b>${MOOD_LABELS[impede]}</b> se contradizem — nenhuma música do catálogo é as duas. Desmarque ${MOOD_LABELS[impede]} para escolher este.`);
       }
+      if (incompativelComSemente(key)) {
+        return recusar(tileEls[key],
+          `<b>${MOOD_LABELS[key]}</b> não combina com <b>${faixaInicialInfo ? escapeHtml(faixaInicialInfo.nome) : "a faixa escolhida"}</b>. Os climas destacados são os que combinam com essa música.`);
+      }
       if (selected.length >= 3) {
         return recusar(tileEls[key], "Três climas é o limite. Desmarque um para trocar.");
       }
@@ -1003,13 +1049,17 @@
       if (!el) return;
       const pos = selected.indexOf(key);
       const impede = conflitoCom(key);
-      const cheio = pos < 0 && !impede && selected.length >= 3;
+      const foraDaSemente = incompativelComSemente(key);
+      const cheio = pos < 0 && !impede && !foraDaSemente && selected.length >= 3;
+      const bloqueado = Boolean(impede) || foraDaSemente || cheio;
       el.classList.toggle("selected", pos >= 0);
-      el.classList.toggle("blocked", Boolean(impede) || cheio);
+      el.classList.toggle("blocked", bloqueado);
       el.setAttribute("aria-pressed", String(pos >= 0));
-      el.setAttribute("aria-disabled", String(Boolean(impede) || cheio));
-      el.title = impede ? `Não combina com ${MOOD_LABELS[impede]}` : cheio ? "Limite de 3 climas" : "";
-      el.querySelector(".order").textContent = pos >= 0 ? String(pos + 1) : impede ? "✕" : "";
+      el.setAttribute("aria-disabled", String(bloqueado));
+      el.title = impede ? `Não combina com ${MOOD_LABELS[impede]}`
+        : foraDaSemente ? "Não combina com a faixa escolhida como semente"
+        : cheio ? "Limite de 3 climas" : "";
+      el.querySelector(".order").textContent = pos >= 0 ? String(pos + 1) : (impede || foraDaSemente) ? "✕" : "";
     });
     if (selected.length === 0) document.getElementById("conflict-note").classList.remove("on");
 

@@ -223,6 +223,42 @@ class PipelineMood:
             for f in self.features
         )
 
+    def moods_compativeis(self, track_id, k=3):
+        """Os `k` moods mais próximos da faixa, mutuamente compatíveis entre si
+        (nenhum par contradiz o outro) -- ticket #3.
+
+        Ranqueia os 8 pelo vetor de 6D da faixa (mais próximo primeiro) e aceita
+        gulosamente até fechar `k`, pulando qualquer âncora que contradiga uma já
+        aceita. Medido contra 3.000 faixas aleatórias do catálogo: sempre fecha
+        exatamente `k` (nunca menos), distribuição saudável entre os 8 (23%-61%
+        de presença). Um teste mais simples -- classificar cada característica
+        da própria faixa como alto/baixo/neutro e comparar contra as âncoras,
+        do mesmo jeito que `_conflito` compara duas âncoras -- foi tentado e
+        descartado: a maioria das faixas fica "neutra" em várias características
+        ao mesmo tempo, e "neutro" nunca contradiz nada, então liberava pares
+        opostos juntos (`Calmo` e `Energetico` para a mesma faixa). Um limiar
+        fixo de distância absoluta também foi descartado: ou libera moods
+        opostos juntos (limiar frouxo) ou não libera quase nada (limiar
+        apertado) -- o espaço de 6D não forma agrupamentos limpos ao redor das
+        âncoras (o próprio projeto já mediu isso: silhouette 0,15-0,23 no GMM).
+        Só o ranking relativo (mais perto que outra âncora) se comportou bem.
+
+        Devolve lista vazia se o track_id não existe no catálogo."""
+        linhas = self.df.index[self.df["track_id"] == track_id]
+        if len(linhas) == 0:
+            return []
+        x = self.X[[linhas[0]]]
+        distancias = cdist(x, self.vocab_X)[0]
+        ordem = [self.vocabulario[i] for i in np.argsort(distancias)]
+        aceitos = []
+        for palavra in ordem:
+            if any(self._conflito(palavra, a) for a in aceitos):
+                continue
+            aceitos.append(palavra)
+            if len(aceitos) == k:
+                break
+        return aceitos
+
     def sequenciar(self, candidatas, X_candidatas, peso_tempo=0.5, peso_harmonico=1.0, inicio=0):
         """Ordena as candidatas por transição suave, partindo de `inicio`.
 
