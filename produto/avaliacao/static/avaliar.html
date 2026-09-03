@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>soundpark — qual ordem soou melhor?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground:#07090A; --surface:#10140F; --surface-2:#171D17;
+    --border:rgba(255,255,255,0.09); --border-strong:rgba(255,255,255,0.18);
+    --text:#F2F6F1; --text-dim:#9FB0A2; --text-faint:#5C6A5E;
+    --accent-1:#A9F44E; --accent-3:#1F8A46; --accent-grad:linear-gradient(120deg,#A9F44E,#1F8A46);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--ground)}
+  body{color:var(--text);font-family:'Plus Jakarta Sans',-apple-system,'Segoe UI',sans-serif;line-height:1.5}
+  h1{font-family:'Baloo 2',sans-serif;margin:0;text-wrap:balance}
+  button{font-family:inherit;cursor:pointer}
+  .page{max-width:720px;margin:0 auto;padding:24px 20px 48px}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+  .wordmark{font-family:'Baloo 2',sans-serif;font-weight:800;font-size:19px;line-height:1}
+  .wordmark .sound{color:var(--text)}
+  .wordmark .park{background:var(--accent-grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .steps{display:flex;gap:6px}
+  .steps i{width:32px;height:4px;border-radius:4px;background:var(--surface-2);display:block}
+  .steps i.done{background:var(--accent-3)} .steps i.now{background:var(--accent-1)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:24px}
+  @media (max-width:520px){.card{padding:18px}}
+  .kicker{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-1);font-weight:800}
+  h1{font-size:clamp(21px,3.4vw,27px);font-weight:800;margin:7px 0 6px}
+  p.sub{margin:0 0 18px;color:var(--text-dim);font-size:14px}
+  .player{aspect-ratio:16/9;width:100%;border-radius:14px;overflow:hidden;background:#0B0E0A;
+    border:1px solid var(--border-strong);display:grid;place-items:center;text-align:center}
+  .player iframe{width:100%;height:100%;border:0;display:block}
+  .player .stub{color:var(--text-faint);font-size:12.5px;padding:16px}
+  .player .stub b{display:block;color:var(--text);font-size:14px;margin-top:6px}
+  .tracks{list-style:none;margin:14px 0 0;padding:0}
+  .tracks li{display:flex;gap:11px;align-items:center;padding:9px 10px;border-radius:10px;cursor:pointer}
+  .tracks li:hover{background:var(--surface-2)}
+  .tracks li.on{background:var(--surface-2);box-shadow:inset 2px 0 0 var(--accent-1)}
+  .tracks .i{color:var(--text-faint);font-size:12px;width:16px;font-variant-numeric:tabular-nums}
+  .tracks .meta{min-width:0;flex:1}
+  .tracks .t{font-size:13.5px;font-weight:600;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tracks .ar{font-size:12px;color:var(--text-dim);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tracks .d{color:var(--text-faint);font-size:12px;font-variant-numeric:tabular-nums}
+  .btn{border-radius:999px;border:1px solid var(--border-strong);background:var(--surface-2);color:var(--text);
+    padding:12px 22px;font-weight:700;font-size:14px}
+  .btn:hover{border-color:var(--accent-1)}
+  .btn-primary{background:var(--accent-grad);color:#0A0F09;border:none}
+  .btn-primary:disabled{opacity:.35;cursor:not-allowed}
+  .actions{display:flex;justify-content:space-between;gap:10px;margin-top:22px}
+  .choices{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0 12px}
+  @media (max-width:520px){.choices{grid-template-columns:1fr}}
+  .choice{background:var(--surface-2);border:1px solid var(--border);border-radius:16px;padding:20px 16px;text-align:center;color:var(--text)}
+  .choice b{display:block;font-family:'Baloo 2',sans-serif;font-size:19px;margin-bottom:3px}
+  .choice span{font-size:12.5px;color:var(--text-dim)}
+  .choice.sel{border-color:var(--accent-1);box-shadow:0 0 0 1px var(--accent-1)}
+  .wide{width:100%;margin-bottom:14px}
+  .wide.sel{background:var(--accent-grad);color:#0A0F09;border-color:transparent}
+  textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;color:var(--text);
+    font-family:inherit;font-size:14px;padding:11px 13px;resize:vertical;min-height:62px}
+  .fim{text-align:center;padding:34px 20px}
+  .fim h1{font-size:26px}
+  .erro{color:#E7897C;font-size:13px;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="page" id="app"></div>
+<script>
+// Teste de escuta cega. O respondente ouve as mesmas 8 músicas em duas ordens
+// e diz qual soou mais contínua. Ele nunca sabe qual é o algoritmo: o servidor
+// resolve o braço na hora de gravar.
+const app = document.getElementById("app");
+let DADOS = null, iPar = 0, etapa = 1, escolha = null, comentario = "", tocando = {1:0, 2:0};
+let t0 = Date.now(), enviando = false, erro = "";
+
+// Id do respondente: só para não contar a mesma pessoa duas vezes. Aleatório,
+// vive no navegador dele, não identifica ninguém.
+let quem = localStorage.getItem("soundpark_respondente");
+if (!quem) { quem = Math.random().toString(36).slice(2, 12); localStorage.setItem("soundpark_respondente", quem); }
+
+const esc = (s) => String(s).replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c]));
+const par = () => DADOS.pares[iPar];
+
+function player(faixa) {
+  if (faixa && faixa.video_id) {
+    return `<div class="player"><iframe src="https://www.youtube.com/embed/${esc(faixa.video_id)}"
+      allow="accelerometer; clipboard-write; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`;
+  }
+  return `<div class="player"><div class="stub">os vídeos ainda não foram resolvidos
+    <b>${faixa ? esc(faixa.track_name) + " — " + esc(faixa.artists) : "—"}</b></div></div>`;
+}
+
+function listaHTML(n) {
+  const faixas = par()["lista_" + n];
+  return `
+    ${player(faixas[tocando[n]])}
+    <ul class="tracks" data-lista="${n}">
+      ${faixas.map((f,i) => `
+        <li data-i="${i}" class="${i===tocando[n]?"on":""}">
+          <span class="i">${i+1}</span>
+          <span class="meta"><span class="t">${esc(f.track_name)}</span><span class="ar">${esc(f.artists)}</span></span>
+          <span class="d">${esc(f.duracao)}</span>
+        </li>`).join("")}
+    </ul>`;
+}
+
+function render() {
+  if (!DADOS) { app.innerHTML = `<div class="card fim"><h1>Carregando…</h1></div>`; return; }
+  const pills = [1,2,3].map(i => `<i class="${i<etapa?"done":i===etapa?"now":""}"></i>`).join("");
+  let corpo;
+
+  if (etapa <= 2) {
+    corpo = `
+      <div class="kicker">Passo ${etapa} de 3${DADOS.pares.length>1?` · par ${iPar+1}`:""}</div>
+      <h1>Ouça a Lista ${etapa}</h1>
+      <p class="sub">Não precisa ouvir inteira — o suficiente para sentir como uma música emenda na outra.
+        ${etapa===2?"São <b>as mesmas músicas</b> do passo anterior, em outra ordem.":"Toque em qualquer faixa para pular."}</p>
+      ${listaHTML(etapa)}
+      <div class="actions"><span></span>
+        <button class="btn btn-primary" id="avancar">${etapa===1?"Ouvi. Ir para a Lista 2 →":"Ouvi. Escolher →"}</button>
+      </div>`;
+  } else if (etapa === 3) {
+    corpo = `
+      <div class="kicker">Passo 3 de 3</div>
+      <h1>Qual soou mais coesa?</h1>
+      <p class="sub">A pergunta é sobre a <b>ordem</b>, não sobre o repertório: qual das duas parecia uma sequência
+        pensada, em que uma música puxava a próxima.</p>
+      <div class="choices">
+        <button class="choice ${escolha==="lista_1"?"sel":""}" data-esc="lista_1"><b>Lista 1</b><span>a primeira que você ouviu</span></button>
+        <button class="choice ${escolha==="lista_2"?"sel":""}" data-esc="lista_2"><b>Lista 2</b><span>a segunda</span></button>
+      </div>
+      <button class="btn wide ${escolha==="empate"?"sel":""}" data-esc="empate">Soaram iguais</button>
+      <textarea id="cmt" placeholder="Quer dizer por quê? (opcional)">${esc(comentario)}</textarea>
+      <div class="actions">
+        <button class="btn" id="voltar">← Voltar</button>
+        <button class="btn btn-primary" id="enviar" ${escolha&&!enviando?"":"disabled"}>${enviando?"Enviando…":"Enviar resposta"}</button>
+      </div>
+      ${erro?`<div class="erro">${esc(erro)}</div>`:""}`;
+  } else if (etapa === 4 && iPar + 1 < DADOS.pares.length) {
+    // Segundo par é opcional: pedir dois testes seguidos derruba a conclusão.
+    corpo = `<div class="fim">
+      <h1>Obrigado!</h1>
+      <p class="sub">Sua resposta foi registrada.</p>
+      <p class="sub">Tem mais dois minutos? Existe um segundo par, com outras músicas.</p>
+      <button class="btn btn-primary" id="proximo">Avaliar o segundo par →</button>
+    </div>`;
+  } else {
+    corpo = `<div class="fim"><h1>Obrigado!</h1><p class="sub">É isso. Sua resposta foi registrada.</p></div>`;
+  }
+
+  app.innerHTML = `
+    <div class="top">
+      <div class="wordmark"><span class="sound">sound</span><span class="park">park</span></div>
+      <div class="steps">${etapa<=3?pills:""}</div>
+    </div>
+    <div class="card">${corpo}</div>`;
+  ligar();
+}
+
+function ligar() {
+  app.querySelectorAll(".tracks li").forEach(li => li.onclick = () => {
+    tocando[li.closest("[data-lista]").dataset.lista] = +li.dataset.i; render();
+  });
+  app.querySelectorAll("[data-esc]").forEach(b => b.onclick = () => { escolha = b.dataset.esc; render(); });
+  const cmt = app.querySelector("#cmt");
+  if (cmt) cmt.oninput = () => { comentario = cmt.value; };
+  const on = (id, fn) => { const b = app.querySelector(id); if (b) b.onclick = fn; };
+  on("#avancar", () => { etapa++; render(); });
+  on("#voltar", () => { etapa--; render(); });
+  on("#enviar", enviar);
+  on("#proximo", () => { iPar++; etapa = 1; escolha = null; comentario = ""; tocando = {1:0,2:0}; t0 = Date.now(); render(); });
+}
+
+async function enviar() {
+  enviando = true; erro = ""; render();
+  try {
+    const r = await fetch("/api/resposta", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ par: par().id, escolha, comentario, respondente: quem,
+                             segundos: Math.round((Date.now() - t0) / 1000) }),
+    });
+    if (!r.ok) throw new Error((await r.json()).erro || "falhou");
+    etapa = 4;
+  } catch (e) {
+    erro = "Não consegui enviar — verifique a conexão e tente de novo.";
+  }
+  enviando = false; render();
+}
+
+render();
+fetch("/api/par").then(r => r.json()).then(d => { DADOS = d; t0 = Date.now(); render(); });
+</script>
+</body>
+</html>

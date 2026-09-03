@@ -1,0 +1,290 @@
+{
+  "semente": 20260902,
+  "n_gerado": 30,
+  "n_recorte": 8,
+  "pares": [
+    {
+      "id": "par1",
+      "palavras": [
+        "Energetico"
+      ],
+      "lista_1": [
+        {
+          "track_id": "5pAo2q7eVt65OSkwYgqhHl",
+          "track_name": "Daaru Desi",
+          "artists": "Benny Dayal;Shalmali Kholgade",
+          "duracao": "4:29",
+          "video_id": null
+        },
+        {
+          "track_id": "2dpaYNEQHiRxtZbfNsse99",
+          "track_name": "Happier",
+          "artists": "Marshmello;Bastille",
+          "duracao": "3:34",
+          "video_id": null
+        },
+        {
+          "track_id": "3x01uHGUwv8q2Mr2c1nUR8",
+          "track_name": "Con Qué Derecho",
+          "artists": "Guayacán Orquesta",
+          "duracao": "4:38",
+          "video_id": null
+        },
+        {
+          "track_id": "3Z5bdTJfjTvEJIzA27Jtk6",
+          "track_name": "Suena El Dembow",
+          "artists": "Joey Montana;Sebastian Yatra",
+          "duracao": "3:15",
+          "video_id": null
+        },
+        {
+          "track_id": "3g7nyIGI5KepLGdonmWjh7",
+          "track_name": "Happier - Sped Up",
+          "artists": "Marshmello;Bastille",
+          "duracao": "3:07",
+          "video_id": null
+        },
+        {
+          "track_id": "0SiEdCfurglrJylPN6BznD",
+          "track_name": "Por Que / Espinhos da Vida / Sorriso Mudo",
+          "artists": "George Henrique & Rodrigo",
+          "duracao": "3:59",
+          "video_id": null
+        },
+        {
+          "track_id": "5RmAUMjGRvwJu862BonyAS",
+          "track_name": "Ich bin voll",
+          "artists": "Balek",
+          "duracao": "3:00",
+          "video_id": null
+        },
+        {
+          "track_id": "7C8NhwOrNbsqi9YcF2rstE",
+          "track_name": "Jag mår illa",
+          "artists": "Magnus Uggla",
+          "duracao": "4:06",
+          "video_id": null
+        }
+      ],
+      "lista_2": [
+        {
+          "track_id": "3x01uHGUwv8q2Mr2c1nUR8",
+          "track_name": "Con Qué Derecho",
+          "artists": "Guayacán Orquesta",
+          "duracao": "4:38",
+          "video_id": null
+        },
+        {
+          "track_id": "5pAo2q7eVt65OSkwYgqhHl",
+          "track_name": "Daaru Desi",
+          "artists": "Benny Dayal;Shalmali Kholgade",
+          "duracao": "4:29",
+          "video_id": null
+        },
+        {
+          "track_id": "5RmAUMjGRvwJu862BonyAS",
+          "track_name": "Ich bin voll",
+          "artists": "Balek",
+          "duracao": "3:00",
+          "video_id": null
+        },
+        {
+          "track_id": "0SiEdCfurglrJylPN6BznD",
+          "track_name": "Por Que / Espinhos da Vida / Sorriso Mudo",
+          "artists": "George Henrique & Rodrigo",
+          "duracao": "3:59",
+          "video_id": null
+        },
+        {
+          "track_id": "7C8NhwOrNbsqi9YcF2rstE",
+          "track_name": "Jag mår illa",
+          "artists": "Magnus Uggla",
+          "duracao": "4:06",
+          "video_id": null
+        },
+        {
+          "track_id": "3Z5bdTJfjTvEJIzA27Jtk6",
+          "track_name": "Suena El Dembow",
+          "artists": "Joey Montana;Sebastian Yatra",
+          "duracao": "3:15",
+          "video_id": null
+        },
+        {
+          "track_id": "3g7nyIGI5KepLGdonmWjh7",
+          "track_name": "Happier - Sped Up",
+          "artists": "Marshmello;Bastille",
+          "duracao": "3:07",
+          "video_id": null
+        },
+        {
+          "track_id": "2dpaYNEQHiRxtZbfNsse99",
+          "track_name": "Happier",
+          "artists": "Marshmello;Bastille",
+          "duracao": "3:34",
+          "video_id": null
+        }
+      ]
+    },
+    {
+      "id": "par2",
+      "palavras": [
+        "Calmo",
+        "Instrumental"
+      ],
+      "lista_1": [
+        {
+          "track_id": "4G69MBJlMo7BxDgzj7s7nV",
+          "track_name": "Derretendo Satélites - Ao Vivo",
+          "artists": "Paula Toller",
+          "duracao": "4:11",
+          "video_id": null
+        },
+        {
+          "track_id": "14RBEuGzKwpt4DRPY5pAKx",
+          "track_name": "Yellow Fountain",
+          "artists": "Melorman",
+          "duracao": "3:56",
+          "video_id": null
+        },
+        {
+          "track_id": "0pfvIu8AKvwEtd88Qvse8p",
+          "track_name": "I Dream Of Christmas",
+          "artists": "Norah Jones",
+          "duracao": "3:23",
+          "video_id": null
+        },
+        {
+          "track_id": "66ORgMEjNfeTtp5hZPf8YG",
+          "track_name": "Milonga del Mar",
+          "artists": "Yonderboi",
+          "duracao": "8:44",
+          "video_id": null
+        },
+        {
+          "track_id": "1FY2Ajg1MtXK05qxXD2q1O",
+          "track_name": "Sweet Lullaby - Version 2021",
+          "artists": "Deep Forest",
+          "duracao": "3:52",
+          "video_id": null
+        },
+        {
+          "track_id": "2SYciSIUYvHMPItZhWY3mI",
+          "track_name": "Shootout (8D Version)",
+          "artists": "Izzamuzzic;Julien Marchal",
+          "duracao": "4:53",
+          "video_id": null
+        },
+        {
+          "track_id": "5JCiqYJxcK4XO1mbQyPNdk",
+          "track_name": "Bones",
+          "artists": "Crumb",
+          "duracao": "3:13",
+          "video_id": null
+        },
+        {
+          "track_id": "3F0mcxksBp33QrL6oyjvLN",
+          "track_name": "Sakura Trees",
+          "artists": "Saib",
+          "duracao": "1:39",
+          "video_id": null
+        }
+      ],
+      "lista_2": [
+        {
+          "track_id": "5JCiqYJxcK4XO1mbQyPNdk",
+          "track_name": "Bones",
+          "artists": "Crumb",
+          "duracao": "3:13",
+          "video_id": null
+        },
+        {
+          "track_id": "1FY2Ajg1MtXK05qxXD2q1O",
+          "track_name": "Sweet Lullaby - Version 2021",
+          "artists": "Deep Forest",
+          "duracao": "3:52",
+          "video_id": null
+        },
+        {
+          "track_id": "2SYciSIUYvHMPItZhWY3mI",
+          "track_name": "Shootout (8D Version)",
+          "artists": "Izzamuzzic;Julien Marchal",
+          "duracao": "4:53",
+          "video_id": null
+        },
+        {
+          "track_id": "14RBEuGzKwpt4DRPY5pAKx",
+          "track_name": "Yellow Fountain",
+          "artists": "Melorman",
+          "duracao": "3:56",
+          "video_id": null
+        },
+        {
+          "track_id": "3F0mcxksBp33QrL6oyjvLN",
+          "track_name": "Sakura Trees",
+          "artists": "Saib",
+          "duracao": "1:39",
+          "video_id": null
+        },
+        {
+          "track_id": "4G69MBJlMo7BxDgzj7s7nV",
+          "track_name": "Derretendo Satélites - Ao Vivo",
+          "artists": "Paula Toller",
+          "duracao": "4:11",
+          "video_id": null
+        },
+        {
+          "track_id": "66ORgMEjNfeTtp5hZPf8YG",
+          "track_name": "Milonga del Mar",
+          "artists": "Yonderboi",
+          "duracao": "8:44",
+          "video_id": null
+        },
+        {
+          "track_id": "0pfvIu8AKvwEtd88Qvse8p",
+          "track_name": "I Dream Of Christmas",
+          "artists": "Norah Jones",
+          "duracao": "3:23",
+          "video_id": null
+        }
+      ]
+    }
+  ],
+  "_gabarito": {
+    "par1": {
+      "lista_1": "algoritmo",
+      "lista_2": "aleatoria",
+      "metricas_recorte": {
+        "algoritmo": {
+          "delta_bpm": 12.2,
+          "pct_compativel": 71
+        },
+        "aleatoria": {
+          "delta_bpm": 20.8,
+          "pct_compativel": 29
+        }
+      },
+      "metricas_completa_30": {
+        "delta_bpm": 10.5,
+        "pct_compativel": 72
+      }
+    },
+    "par2": {
+      "lista_1": "aleatoria",
+      "lista_2": "algoritmo",
+      "metricas_recorte": {
+        "algoritmo": {
+          "delta_bpm": 5.5,
+          "pct_compativel": 71
+        },
+        "aleatoria": {
+          "delta_bpm": 11.3,
+          "pct_compativel": 43
+        }
+      },
+      "metricas_completa_30": {
+        "delta_bpm": 14.8,
+        "pct_compativel": 62
+      }
+    }
+  }
+}
