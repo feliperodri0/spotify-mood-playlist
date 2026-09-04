@@ -377,6 +377,14 @@ def criar_spotify():
     if not session.get("spotify"):
         return jsonify({"erro": "Entre com o Spotify primeiro."}), 401
 
+    # O nome vem do campo que o usuário edita na tela (pré-preenchido com o
+    # automático, mas o texto final é dele). Sem limite de tamanho documentado
+    # pela API do Spotify -- os 100 caracteres aqui são só um teto de UX, não
+    # uma regra da API.
+    nome = (corpo.get("nome") or "").strip()[:100]
+    if not nome:
+        nome = f"soundpark · {' + '.join(palavras)}"
+
     try:
         token, atualizado = spotify.token_valido(session["spotify"])
         session["spotify"] = atualizado
@@ -388,7 +396,7 @@ def criar_spotify():
             return jsonify({"erro": "Nenhuma das faixas está disponível na sua conta."}), 400
 
         playlist_id, url = spotify.criar_playlist(
-            token, f"soundpark · {' + '.join(palavras)}",
+            token, nome,
             "Gerada por mood (âncoras no espaço de audio features) e ordenada por transição suave.",
             publica=bool(corpo.get("publica")),
         )

@@ -307,13 +307,16 @@ const Ctrl = (() => {
     try { state.spotify = await fetch("/api/spotify/status").then((r) => r.json()); notificar(); } catch (e) {}
   }
 
-  async function criarSpotify(publica) {
+  async function criarSpotify(nome, publica) {
     if (!state.ultimaPreviewIds) return;
     state.criando = true; state.resultadoCriacao = null; notificar();
     try {
       const resp = await fetch("/api/criar-spotify", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ palavras: state.selected, track_ids: state.ultimaPreviewIds, publica: Boolean(publica) }),
+        body: JSON.stringify({
+          nome: String(nome || "").trim(), palavras: state.selected,
+          track_ids: state.ultimaPreviewIds, publica: Boolean(publica),
+        }),
       });
       const data = await resp.json();
       state.resultadoCriacao = resp.ok ? data : { erro: data.erro || "Erro desconhecido" };
@@ -627,6 +630,12 @@ function recolorirDisco(estado, corA, corB) {
   .tracklist .star { background: none; border: 1px solid var(--glass-border-strong); border-radius: 50%; width: 22px; height: 22px; font-size: 10px; color: var(--text-faint); flex: none; }
   .tracklist li.is-seed .star { background: var(--accent-1); color: #06210F; border-color: transparent; }
 
+  .playlist-name { margin-top: 14px; }
+  .playlist-name input {
+    width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 12px;
+    color: var(--text); font-family: inherit; font-weight: 700; font-size: 13.5px; padding: 11px 13px; outline: none;
+  }
+  .playlist-name input:focus { border-color: var(--accent-1); }
   .create-row { margin-top: 16px; }
   .result-box { margin-top: 14px; padding: 13px 15px; border-radius: 14px; border: 1px solid var(--accent-3); background: rgba(76,201,107,0.08); font-size: 13px; }
   .result-box.erro { border-color: var(--bad); background: rgba(231,137,124,0.08); color: var(--bad); }
@@ -671,6 +680,10 @@ const App = (() => {
   const SPOTIFY_SVG = '<svg viewBox="0 0 48 48"><g transform="translate(-200 -460)"><path fill="currentColor" d="M238.16 481.36c-7.68-4.56-20.52-5.04-27.84-2.76-1.2.36-2.4-.36-2.76-1.44-.36-1.2.36-2.4 1.44-2.76 8.52-2.52 22.56-2.04 31.44 3.24 1.08.6 1.44 2.04.84 3.12-.6.84-2.04 1.2-3.12.6m-.24 6.72c-.6.84-1.68 1.2-2.52.6-6.48-3.96-16.32-5.16-23.88-2.76-.96.24-2.04-.24-2.28-1.2-.24-.96.24-2.04 1.2-2.28 8.76-2.64 19.56-1.32 27 3.24.72.36 1.08 1.56.48 2.4m-2.88 6.6c-.48.72-1.32.96-2.04.48-5.64-3.48-12.72-4.2-21.12-2.28-.84.24-1.56-.36-1.8-1.08-.24-.84.36-1.56 1.08-1.8 9.12-2.04 17.04-1.2 23.28 2.64.84.36.96 1.32.6 2.04M224 460c-13.2 0-24 10.8-24 24s10.8 24 24 24 24-10.8 24-24-10.68-24-24-24"/></g></svg>';
   let root, discEstado = null;
   let aguardandoLoginParaCriar = false;
+  // true assim que o usuário mexe no campo de nome -- a partir daí o valor
+  // digitado nunca mais é sobrescrito pelo nome automático, nem quando a
+  // prévia é regerada (reseed pela estrela, por exemplo).
+  let nomeEditadoPeloUsuario = false;
 
   function loginUrl() {
     return "/login/spotify?next=" + encodeURIComponent(location.pathname);
@@ -738,6 +751,9 @@ const App = (() => {
             <h3>Sua playlist</h3>
             <p class="hint" id="result-hint">Escolha o clima e gere a prévia.</p>
             <div id="tracklist-wrap"></div>
+            <div class="playlist-name" id="playlist-name-wrap" hidden>
+              <input type="text" id="playlist-name-input" maxlength="100" placeholder="Nome da playlist" autocomplete="off">
+            </div>
             <div class="create-row" id="create-row" hidden>
               <button class="primary-btn" id="create-btn">Criar no Spotify</button>
             </div>
@@ -864,16 +880,27 @@ const App = (() => {
     const wrap = root.querySelector("#tracklist-wrap");
     const hint = root.querySelector("#result-hint");
     const createRow = root.querySelector("#create-row");
+    const nomeWrap = root.querySelector("#playlist-name-wrap");
+    const nomeInput = root.querySelector("#playlist-name-input");
     if (!s.preview) {
       wrap.innerHTML = "";
       hint.textContent = "Escolha o clima e gere a prévia.";
       createRow.hidden = true;
+      nomeWrap.hidden = true;
     } else if (s.preview.erro) {
       wrap.innerHTML = `<div class="result-box erro">${Ctrl.escapeHtml(s.preview.erro)}</div>`;
       hint.textContent = "";
       createRow.hidden = true;
+      nomeWrap.hidden = true;
     } else {
       hint.textContent = `${s.preview.faixas.length} faixas · ${s.preview.duracao_total}`;
+      nomeWrap.hidden = false;
+      // Pré-preenchido e editável com o nome automático -- só recalcula
+      // enquanto o usuário não tiver digitado nada (uma vez editado, o
+      // valor é dele, mesmo que os moods/semente mudem num reseed).
+      if (!nomeEditadoPeloUsuario) {
+        nomeInput.value = `soundpark · ${s.selected.map((k) => Ctrl.LABELS[k]).join(" + ")}`;
+      }
       wrap.innerHTML = `<ul class="tracklist">${s.preview.faixas.map((f, i) => `
         <li style="animation-delay:${i * 0.03}s" class="${i === 0 ? "is-seed" : ""}">
           <span class="n num">${String(i + 1).padStart(2, "0")}</span>
@@ -896,14 +923,14 @@ const App = (() => {
     else resBox.innerHTML = `<div class="result-box">Playlist criada com ${s.resultadoCriacao.adicionadas} de ${s.resultadoCriacao.total} faixas: <a href="${s.resultadoCriacao.url}" target="_blank" rel="noopener noreferrer">abrir no Spotify</a></div>`;
 
     const createBtn = root.querySelector("#create-btn");
-    createBtn.disabled = s.criando;
+    createBtn.disabled = s.criando || !nomeInput.value.trim();
     createBtn.textContent = s.criando ? "Criando…" : "Criar no Spotify";
 
     // login concluído enquanto o gate estava aberto -> fecha e cria sozinho
     if (aguardandoLoginParaCriar && s.spotify.logado) {
       aguardandoLoginParaCriar = false;
       fecharGate();
-      Ctrl.criarSpotify(false);
+      Ctrl.criarSpotify(root.querySelector("#playlist-name-input").value, false);
     }
   }
 
@@ -969,7 +996,11 @@ const App = (() => {
 
     root.querySelector("#create-btn").addEventListener("click", () => {
       if (!Ctrl.state.spotify.logado) { aguardandoLoginParaCriar = true; abrirGate(); return; }
-      Ctrl.criarSpotify(false);
+      Ctrl.criarSpotify(root.querySelector("#playlist-name-input").value, false);
+    });
+    root.querySelector("#playlist-name-input").addEventListener("input", () => {
+      nomeEditadoPeloUsuario = true;
+      root.querySelector("#create-btn").disabled = Ctrl.state.criando || !root.querySelector("#playlist-name-input").value.trim();
     });
     root.querySelector("#gate-fechar").addEventListener("click", () => { aguardandoLoginParaCriar = false; fecharGate(); });
 
