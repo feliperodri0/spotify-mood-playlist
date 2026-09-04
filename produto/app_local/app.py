@@ -60,7 +60,7 @@ def custo_cota(n: int) -> int:
 
 @app.route("/")
 def index():
-    return send_from_directory(app.static_folder, "index.html")
+    return send_from_directory(app.static_folder, "landing.html")
 
 
 @app.route("/api/vocabulario")
@@ -299,6 +299,21 @@ def spotify_status():
         return jsonify({"configurado": True, "logado": False})
 
 
+def _destino_pos_login():
+    """Para onde voltar depois do login (?next=), restrito a um caminho local
+    do próprio site -- nunca uma URL externa (evita open redirect). Sem `next`,
+    mantém o comportamento de sempre: volta pra "/".
+
+    Existe para o protótipo de redesign (prototipo_redesign.html) poder linkar
+    /login/spotify?next=/prototipo_redesign.html%3Fvariant%3DB e voltar pra
+    onde o login começou, em vez de sempre cair no produto real -- sem essa
+    generalização, completar o login te tirava do protótipo no meio do fluxo."""
+    bruto = request.args.get("next", "/")
+    if not bruto.startswith("/") or bruto.startswith("//"):
+        return "/"
+    return bruto
+
+
 @app.route("/login/spotify")
 def spotify_login():
     # Clicar "Entrar" duas vezes (ou usar o botão voltar) sobrescrevia o state
@@ -308,16 +323,26 @@ def spotify_login():
         return redirect("/spotify-processando")
     estado = secrets.token_urlsafe(16)
     session["spotify_state"] = estado
+    session["spotify_next"] = _destino_pos_login()
     try:
         return redirect(spotify.url_autorizacao(estado))
     except spotify.SpotifyNaoConfigurado as e:
         session.pop("spotify_state", None)
+        session.pop("spotify_next", None)
         return jsonify({"erro": str(e)}), 503
 
 
 @app.route("/spotify-processando")
 def spotify_processando():
-    return redirect("/?spotify=ja_em_andamento")
+    destino = session.get("spotify_next", "/")
+    sep = "&" if "?" in destino else "?"
+    return redirect(f"{destino}{sep}spotify=ja_em_andamento")
+
+
+@app.route("/logout")
+def logout():
+    session.pop("spotify", None)
+    return redirect(_destino_pos_login())
 
 
 @app.route("/callback")
@@ -325,18 +350,21 @@ def spotify_callback():
     # A tentativa termina aqui de qualquer jeito: state consumido de uma vez,
     # sucesso ou falha, para nunca sobrar preso numa sessão para sempre.
     esperado = session.pop("spotify_state", None)
+    destino = session.pop("spotify_next", "/")
+    sep = "&" if "?" in destino else "?"
+
     if request.args.get("error"):
         print(f"  [spotify callback] usuário negou: {request.args.get('error')}", flush=True)
-        return redirect("/?spotify=negado")
+        return redirect(f"{destino}{sep}spotify=negado")
     if not request.args.get("state") or request.args["state"] != esperado:
         print("  [spotify callback] state não bate (login duplicado ou expirado)", flush=True)
-        return redirect("/?spotify=estado_invalido")
+        return redirect(f"{destino}{sep}spotify=estado_invalido")
     try:
         session["spotify"] = spotify.trocar_codigo(request.args["code"])
     except (spotify.SpotifyErro, spotify.SpotifyNaoConfigurado) as e:
         print(f"  [spotify callback] troca de código falhou: {e}", flush=True)
-        return redirect("/?spotify=falhou")
-    return redirect("/?spotify=ok")
+        return redirect(f"{destino}{sep}spotify=falhou")
+    return redirect(f"{destino}{sep}spotify=ok")
 
 
 @app.route("/api/criar-spotify", methods=["POST"])

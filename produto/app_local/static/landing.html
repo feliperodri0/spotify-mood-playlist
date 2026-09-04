@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>soundpark — playlists automáticas, feitas pra você</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ground:#050705; --ground-2:#0A0F0A; --panel:#0D130D;
+    --surface:rgba(255,255,255,0.045); --surface-2:rgba(255,255,255,0.075);
+    --text:#F4F8F3; --text-dim:#A9BCAB; --text-faint:#64756A;
+    --accent-1:#4DC540; --accent-3:#1F8A46;
+    --accent-grad:linear-gradient(120deg,var(--accent-1),var(--accent-3));
+    --glass-border:rgba(255,255,255,0.10); --glass-border-strong:rgba(255,255,255,0.20);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--ground);overflow-x:hidden;}
+  body{
+    font-family:'Plus Jakarta Sans',-apple-system,'Segoe UI',sans-serif;
+    color:var(--text); background:var(--ground); width:100%;
+  }
+  h1,h2,h3{font-family:'Baloo 2','Plus Jakarta Sans',sans-serif; text-wrap:balance; margin:0;}
+  a{color:var(--accent-1); text-decoration:none;} a:hover{color:var(--text);}
+  .wrap{max-width:1180px; margin:0 auto; padding:0 40px;}
+  .eyebrow{font-size:12.5px; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; color:var(--accent-1); margin:0 0 14px;}
+
+  /* header */
+  .nav{position:relative; display:flex; align-items:center; justify-content:space-between; padding:26px 0;}
+  .brand{display:flex; align-items:center; gap:9px;}
+  .brand img{width:30px; height:30px; display:block; filter:drop-shadow(0 0 10px rgba(77,197,64,0.35));}
+  .wordmark{font-family:'Baloo 2',sans-serif; font-weight:800; font-size:19px; line-height:1;}
+  .wordmark .sound{color:var(--text);}
+  .wordmark .park{color:var(--accent-1);}
+  .nav-right{display:flex; align-items:center; gap:12px; position:relative;}
+  .pill{display:inline-flex; align-items:center; gap:8px; padding:11px 20px; border-radius:999px; font-weight:700; font-size:13.5px; white-space:nowrap; border:none; cursor:pointer;}
+  .pill-primary{background:var(--accent-grad); color:#06210F; border:none; box-shadow:0 14px 30px -10px rgba(77,197,64,0.45);}
+  .pill-primary:hover{color:#06210F; filter:brightness(1.06);}
+  .pill-ghost{border:1px solid var(--glass-border-strong); color:var(--text-dim); background:transparent;}
+  .pill-ghost:hover{border-color:var(--accent-1); color:var(--text);}
+  .spotify-chip{display:flex; align-items:center; gap:8px; padding:7px 14px 7px 7px; border-radius:999px; font-size:12px; font-weight:700; color:var(--text-dim); border:1px solid var(--glass-border-strong);}
+  .spotify-chip .dot{width:26px; height:26px; border-radius:50%; background:#1DB954; display:grid; place-items:center; color:#04170B;}
+  .spotify-chip .dot svg{width:14px; height:14px;}
+  /* mesma classe define display próprio -- precisa do override explícito
+     pra vencer a regra nativa [hidden]{display:none} em especificidade igual. */
+  .nav-cta[hidden], .spotify-chip[hidden]{display:none;}
+
+  /* hamburguer + menu */
+  .ham-btn{
+    width:38px; height:38px; border-radius:11px; border:1px solid var(--glass-border-strong); background:transparent;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; flex:none; cursor:pointer;
+  }
+  .ham-btn span{width:16px; height:2px; background:var(--text-dim); border-radius:2px; transition:background 0.2s ease;}
+  .ham-btn:hover span{background:var(--text);}
+  .ham-menu{
+    position:absolute; top:50px; right:0; min-width:210px; background:#0A0F0A; border:1px solid var(--glass-border-strong);
+    border-radius:16px; padding:8px; display:flex; flex-direction:column; gap:2px; z-index:80;
+    box-shadow:0 20px 50px -12px rgba(0,0,0,0.9); opacity:0; pointer-events:none; transform:translateY(-6px);
+    transition:opacity 0.2s ease, transform 0.2s ease;
+  }
+  .ham-menu.open{opacity:1; pointer-events:auto; transform:translateY(0);}
+  .ham-menu a{display:block; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:600; color:var(--text-dim);}
+  .ham-menu a:hover{background:rgba(255,255,255,0.06); color:var(--text);}
+  .ham-menu .divider{height:1px; background:var(--glass-border); margin:6px 4px;}
+
+  /* hero */
+  .hero{position:relative; padding:56px 0 84px; overflow:hidden;}
+  .hero::before{
+    content:""; position:absolute; top:-220px; left:50%; width:900px; height:900px; margin-left:-450px;
+    background:radial-gradient(circle,rgba(77,197,64,0.16),transparent 62%); pointer-events:none;
+  }
+  .hero-inner{position:relative; display:grid; grid-template-columns:1fr 460px; gap:56px; align-items:center;}
+  .hero-copy h1{font-size:clamp(34px,4.4vw,54px); font-weight:800; letter-spacing:-0.01em; margin-bottom:20px;}
+  .hero-copy p{font-size:16.5px; line-height:1.6; color:var(--text-dim); max-width:460px; margin:0 0 30px;}
+  .hero-cta{display:flex; align-items:center; gap:16px; margin-bottom:34px;}
+  .trust-row{display:flex; flex-wrap:wrap; gap:20px;}
+  .trust-item{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-faint); font-weight:600;}
+  .trust-item .dot{width:6px; height:6px; border-radius:50%; background:var(--accent-1); flex:none;}
+
+  .hero-visual{position:relative; height:460px; display:grid; place-items:center;}
+  .disc-glow{position:absolute; width:280px; height:280px; border-radius:50%; filter:blur(46px); opacity:0.55; background:var(--accent-grad);}
+  .disc{
+    position:relative; width:270px; height:270px; border-radius:50%;
+    background:repeating-radial-gradient(circle at 50% 50%, #0C130C 0 3px, #060A06 3px 6px);
+    box-shadow:inset 0 0 44px rgba(0,0,0,0.65), 0 30px 70px -18px rgba(0,0,0,0.7);
+    display:grid; place-items:center;
+  }
+  .disc::before{content:""; position:absolute; inset:0; border-radius:50%; box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);}
+  .disc-core{width:100px; height:100px; border-radius:50%; background:var(--accent-grad); display:grid; place-items:center; box-shadow:0 0 0 6px #060A06, 0 0 30px -6px rgba(77,197,64,0.6);}
+  .disc-core span{width:12px; height:12px; border-radius:50%; background:#06210F;}
+  .mood-chip{
+    position:absolute; padding:8px 15px; border-radius:999px; font-size:12px; font-weight:700;
+    background:rgba(10,15,10,0.85); border:1px solid var(--glass-border-strong); color:var(--text-dim);
+    -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); white-space:nowrap;
+  }
+  .mc-1{top:6px; left:0;}
+  .mc-2{top:34px; right:-6px; border-color:var(--accent-1); color:var(--text);}
+  .mc-3{bottom:60px; left:-18px;}
+  .mc-4{bottom:14px; right:22px;}
+
+  /* panel section */
+  .panel{background:var(--panel); padding:96px 0; border-top:1px solid var(--glass-border); border-bottom:1px solid var(--glass-border);}
+  .panel-head{max-width:640px; margin:0 0 52px;}
+  .panel-head h2{font-size:clamp(26px,3vw,36px); font-weight:800; margin-bottom:16px;}
+  .panel-head p{font-size:15.5px; line-height:1.6; color:var(--text-dim); margin:0;}
+  .compare-grid{display:grid; grid-template-columns:1fr 340px; gap:48px; align-items:start;}
+  .compare-list{display:flex; flex-direction:column; gap:14px;}
+  .compare-card{
+    background:var(--surface); border:1px solid var(--glass-border); border-radius:18px; padding:18px 20px;
+  }
+  .cc-top{display:flex; align-items:center; gap:14px; margin-bottom:14px;}
+  .cc-dot{width:38px; height:38px; border-radius:50%; flex:none; display:grid; place-items:center; font-size:15px; background:rgba(77,197,64,0.16);}
+  .cc-meta{flex:1; min-width:0;}
+  .cc-track{font-weight:700; font-size:14.5px;}
+  .cc-artist{font-size:12.5px; color:var(--text-faint);}
+  .cc-tabs{display:flex; gap:6px; background:rgba(255,255,255,0.05); border-radius:10px; padding:4px; flex:none;}
+  .cc-tabs button{border:none; background:transparent; color:var(--text-dim); font-size:11.5px; font-weight:700; padding:7px 12px; border-radius:8px; cursor:pointer;}
+  .cc-tabs button.on{background:var(--accent-grad); color:#06210F;}
+  .cc-desc{font-size:13px; line-height:1.55; color:var(--text-dim); padding-left:52px; margin:0;}
+  .compare-visual{position:sticky; top:24px;}
+  .compare-visual img{width:100%; border-radius:22px; display:block; box-shadow:0 30px 60px -20px rgba(0,0,0,0.7); border:1px solid var(--glass-border);}
+  .sample-note{font-size:11.5px; color:var(--text-faint); margin-top:18px;}
+
+  /* steps section */
+  .steps{padding:96px 0;}
+  .steps-grid{display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center;}
+  .steps-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:26px;}
+  .step-item{display:flex; gap:18px;}
+  .step-num{
+    flex:none; width:38px; height:38px; border-radius:50%; background:var(--surface-2); border:1px solid var(--glass-border-strong);
+    display:grid; place-items:center; font-family:'Baloo 2',sans-serif; font-weight:700; font-size:15px; color:var(--accent-1);
+  }
+  .step-body h3{font-size:16px; font-weight:700; margin-bottom:6px;}
+  .step-body p{font-size:13.5px; line-height:1.55; color:var(--text-dim); margin:0; max-width:380px;}
+  .steps-cta{margin-top:38px;}
+
+  .cta-card{
+    background:var(--surface); border:1px solid var(--glass-border-strong); border-radius:22px; padding:40px 32px;
+    box-shadow:0 30px 70px -22px rgba(0,0,0,0.7); text-align:center;
+  }
+  .cta-card .disc-mini{
+    width:74px; height:74px; border-radius:50%; margin:0 auto 20px; background:var(--accent-grad);
+    box-shadow:0 0 0 8px rgba(77,197,64,0.08), 0 20px 40px -14px rgba(77,197,64,0.5);
+  }
+  .cta-card h3{font-size:19px; font-weight:800; margin-bottom:10px;}
+  .cta-card p{font-size:13.5px; line-height:1.6; color:var(--text-dim); margin:0 0 26px;}
+  .cta-card .pill{width:100%; justify-content:center; padding:14px 20px; font-size:14px;}
+
+  /* footer */
+  .foot{border-top:1px solid var(--glass-border); padding:40px 0;}
+  .foot-inner{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:18px;}
+  .foot-tag{font-size:12.5px; color:var(--text-faint);}
+  .foot-links{display:flex; gap:22px;}
+  .foot-links a{font-size:12.5px; color:var(--text-dim); font-weight:600;}
+
+  @media (max-width:900px){
+    .wrap{padding:0 24px;}
+    .hero-inner{grid-template-columns:1fr;}
+    .hero-visual{height:340px; order:-1;}
+    .disc{width:200px; height:200px;} .disc-core{width:74px; height:74px;}
+    .compare-grid, .steps-grid{grid-template-columns:1fr;}
+    .compare-visual{position:static;}
+  }
+  @media (max-width:560px){
+    .nav-cta{display:none;}
+    .mood-chip{font-size:10.5px; padding:6px 11px;}
+    .mc-2{right:6px;}
+    .mc-3{left:6px;}
+    .mc-4{right:10px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="nav">
+    <a class="brand" href="/">
+      <img src="icon-mark.png" alt="">
+      <span class="wordmark"><span class="sound">sound</span><span class="park">park</span></span>
+    </a>
+    <div class="nav-right">
+      <a href="/login/spotify?next=/" class="pill pill-primary nav-cta" id="nav-login-btn">Continuar com Spotify</a>
+      <span class="spotify-chip nav-cta" id="nav-spotify-chip" hidden></span>
+      <button type="button" class="ham-btn" id="ham-btn" aria-label="Abrir menu">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="ham-menu" id="ham-menu">
+        <a href="/login/spotify?next=/" id="ham-login-link">Continuar com Spotify</a>
+        <div class="divider"></div>
+        <a href="#recursos">Recursos</a>
+        <a href="#como-funciona">Como funciona</a>
+        <div class="divider"></div>
+        <a href="#">Configurações</a>
+      </nav>
+    </div>
+  </header>
+</div>
+
+<section class="hero">
+  <div class="wrap hero-inner">
+    <div class="hero-copy">
+      <p class="eyebrow">Playlists automáticas · integrado ao Spotify</p>
+      <h1>Sua playlist muda de clima com você.</h1>
+      <p>Escolha como você tá se sentindo agora — o soundpark monta a playlist na hora, direto na sua conta Spotify, a partir do clima, de uma faixa semente e da duração que você quiser.</p>
+      <div class="hero-cta">
+        <a href="prototipo_final.html" class="pill pill-primary">Escolher meu clima</a>
+        <a href="#como-funciona" class="pill pill-ghost">Ver como funciona</a>
+      </div>
+      <div class="trust-row">
+        <span class="trust-item"><span class="dot"></span>Grátis pra explorar</span>
+        <span class="trust-item"><span class="dot"></span>Login só na hora de salvar</span>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="disc-glow"></div>
+      <div class="disc"><div class="disc-core"><span></span></div></div>
+      <span class="mood-chip mc-1">Feliz</span>
+      <span class="mood-chip mc-2">Energético</span>
+      <span class="mood-chip mc-3">Calmo</span>
+      <span class="mood-chip mc-4">Melancólico</span>
+    </div>
+  </div>
+</section>
+
+<section class="panel" id="recursos">
+  <div class="wrap">
+    <div class="panel-head">
+      <p class="eyebrow">Sob medida</p>
+      <h2>Um som para cada estado de espírito.</h2>
+      <p>Uma playlist genérica não sabe como você tá. O soundpark lê o clima que você escolhe e a faixa que você usa de semente pra montar algo que realmente combina — em vez de mais do mesmo.</p>
+    </div>
+    <div class="compare-grid">
+      <div class="compare-list" id="compare-list">
+        <div class="compare-card" data-idx="0">
+          <div class="cc-top">
+            <div class="cc-dot" style="color:#4DC540">●</div>
+            <div class="cc-meta">
+              <div class="cc-track">Levitating</div>
+              <div class="cc-artist">Dua Lipa</div>
+            </div>
+            <div class="cc-tabs">
+              <button type="button" data-tab="a">Aleatório</button>
+              <button type="button" data-tab="b" class="on">soundpark</button>
+            </div>
+          </div>
+          <p class="cc-desc"
+             data-desc-a="playlist genérica de pop, sem filtro de clima nenhum."
+             data-desc-b="94% de aderência ao clima Feliz — energia alta, valência alta.">94% de aderência ao clima Feliz — energia alta, valência alta.</p>
+        </div>
+        <div class="compare-card" data-idx="1">
+          <div class="cc-top">
+            <div class="cc-dot" style="color:#4DC540">●</div>
+            <div class="cc-meta">
+              <div class="cc-track">Weightless</div>
+              <div class="cc-artist">Marconi Union</div>
+            </div>
+            <div class="cc-tabs">
+              <button type="button" data-tab="a">Aleatório</button>
+              <button type="button" data-tab="b" class="on">soundpark</button>
+            </div>
+          </div>
+          <p class="cc-desc"
+             data-desc-a="mix aleatório de lo-fi, ritmo instável do início ao fim."
+             data-desc-b="91% de aderência ao clima Instrumental — ambiente, sem vocais.">91% de aderência ao clima Instrumental — ambiente, sem vocais.</p>
+        </div>
+        <div class="compare-card" data-idx="2">
+          <div class="cc-top">
+            <div class="cc-dot" style="color:#1F8A46">●</div>
+            <div class="cc-meta">
+              <div class="cc-track">Liability</div>
+              <div class="cc-artist">Lorde</div>
+            </div>
+            <div class="cc-tabs">
+              <button type="button" data-tab="a">Aleatório</button>
+              <button type="button" data-tab="b" class="on">soundpark</button>
+            </div>
+          </div>
+          <p class="cc-desc"
+             data-desc-a='mix aleatório de "sad songs", sem faixa semente nenhuma.'
+             data-desc-b="96% de aderência ao clima Melancólico, a partir da sua semente.">96% de aderência ao clima Melancólico, a partir da sua semente.</p>
+        </div>
+      </div>
+      <div class="compare-visual">
+        <img src="soundpark-logo.jpg" alt="soundpark">
+        <p class="sample-note">*aderência de clima ilustrativa, calculada a partir da sua faixa semente</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="steps" id="como-funciona">
+  <div class="wrap">
+    <div class="panel-head">
+      <p class="eyebrow">3 passos</p>
+      <h2>Criar sua playlist é simples.</h2>
+    </div>
+    <div class="steps-grid">
+      <div>
+        <ol class="steps-list">
+          <li class="step-item">
+            <span class="step-num">1</span>
+            <div class="step-body">
+              <h3>Escolha o clima</h3>
+              <p>Feliz, calmo, energético, melancólico... o disco reage e muda de cor junto com você.</p>
+            </div>
+          </li>
+          <li class="step-item">
+            <span class="step-num">2</span>
+            <div class="step-body">
+              <h3>Ajuste duração e semente</h3>
+              <p>Defina o tempo ou a quantidade de faixas, e use uma música como semente pra guiar o resultado.</p>
+            </div>
+          </li>
+          <li class="step-item">
+            <span class="step-num">3</span>
+            <div class="step-body">
+              <h3>Salve direto no Spotify</h3>
+              <p>Confirme o login só na hora de criar — a playlist cai pronta na sua conta, sem passos extras.</p>
+            </div>
+          </li>
+        </ol>
+        <div class="steps-cta">
+          <a href="prototipo_final.html" class="pill pill-primary">Criar minha playlist agora</a>
+        </div>
+      </div>
+      <div class="cta-card">
+        <div class="disc-mini"></div>
+        <h3>Pronto pra ouvir?</h3>
+        <p>Abra o soundpark e monte sua playlist agora, direto na sua conta Spotify.</p>
+        <a href="prototipo_final.html" class="pill pill-primary">Abrir o soundpark</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wrap foot-inner">
+    <div class="brand">
+      <img src="icon-mark.png" alt="">
+      <span class="wordmark"><span class="sound">sound</span><span class="park">park</span></span>
+      <span class="foot-tag" style="margin-left:10px;">Playlists automáticas, feitas pra você.</span>
+    </div>
+    <div class="foot-links">
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#recursos">Recursos</a>
+      <a href="/login/spotify?next=/">Continuar com Spotify</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  var hamBtn = document.getElementById("ham-btn");
+  var hamMenu = document.getElementById("ham-menu");
+  hamBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    hamMenu.classList.toggle("open");
+  });
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest(".nav-right")) hamMenu.classList.remove("open");
+  });
+
+  document.querySelectorAll(".compare-card").forEach(function (card) {
+    var desc = card.querySelector(".cc-desc");
+    var buttons = card.querySelectorAll(".cc-tabs button");
+    buttons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        buttons.forEach(function (b) { b.classList.remove("on"); });
+        btn.classList.add("on");
+        var tab = btn.dataset.tab;
+        desc.textContent = tab === "a" ? desc.dataset.descA : desc.dataset.descB;
+      });
+    });
+  });
+
+  // Ícone oficial do Spotify (assets/spotify.svg), com a cor adaptada por
+  // currentColor -- cada lugar que usa o ícone já controla `color` no CSS
+  // (chip com fundo verde, botão, etc.), então basta herdar.
+  var SPOTIFY_SVG = '<svg viewBox="0 0 48 48"><g transform="translate(-200 -460)"><path fill="currentColor" d="M238.16 481.36c-7.68-4.56-20.52-5.04-27.84-2.76-1.2.36-2.4-.36-2.76-1.44-.36-1.2.36-2.4 1.44-2.76 8.52-2.52 22.56-2.04 31.44 3.24 1.08.6 1.44 2.04.84 3.12-.6.84-2.04 1.2-3.12.6m-.24 6.72c-.6.84-1.68 1.2-2.52.6-6.48-3.96-16.32-5.16-23.88-2.76-.96.24-2.04-.24-2.28-1.2-.24-.96.24-2.04 1.2-2.28 8.76-2.64 19.56-1.32 27 3.24.72.36 1.08 1.56.48 2.4m-2.88 6.6c-.48.72-1.32.96-2.04.48-5.64-3.48-12.72-4.2-21.12-2.28-.84.24-1.56-.36-1.8-1.08-.24-.84.36-1.56 1.08-1.8 9.12-2.04 17.04-1.2 23.28 2.64.84.36.96 1.32.6 2.04M224 460c-13.2 0-24 10.8-24 24s10.8 24 24 24 24-10.8 24-24-10.68-24-24-24"/></g></svg>';
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  fetch("/api/spotify/status").then(function (r) { return r.json(); }).then(function (s) {
+    if (!s.configurado || !s.logado) return;
+    document.getElementById("nav-login-btn").hidden = true;
+    var chip = document.getElementById("nav-spotify-chip");
+    chip.hidden = false;
+    chip.innerHTML = '<span class="dot">' + SPOTIFY_SVG + "</span>" + escapeHtml(s.nome || "conectado");
+    var link = document.getElementById("ham-login-link");
+    link.textContent = "Sair";
+    link.href = "/logout?next=/";
+  }).catch(function () {});
+</script>
+</body>
+</html>

@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>soundpark</title>
+<!--
+  Versão final consolidada, fruto de 3 variantes exploradas separadamente
+  (produto/app_local/static/prototipo_redesign.html, arquivada num branch
+  descartável) e depois fundidas por feedback direto do usuário:
+
+  - Órbita de moods ao redor de um centro vazio (era a Variante A) -- o disco
+    saiu de dentro da órbita porque o glow dele (90px de blur) invadia o
+    espaço dos nós mais próximos, gerando sobreposição visual.
+  - O disco sobe pro cabeçalho, sozinho, reagindo à cor do clima escolhido
+    (era o comportamento da Variante C, só que centralizada atrás da órbita;
+    agora é um elemento próprio, no topo).
+  - O login é um modal de vidro sobre o app desfocado (era a Variante A) --
+    preferência explícita do usuário sobre o passo-a-passo da B e o bottom
+    sheet da C.
+  - YouTube como opção secundária de criação e o indicador de cota real:
+    nenhuma das 3 variantes tinha os dois -- ficaram de fora sem querer,
+    adicionados aqui para fechar a paridade com o produto real.
+
+  Consome as MESMAS rotas reais do Flask (/api/vocabulario, /api/buscar-faixa,
+  /api/moods-compativeis, /api/preview, /api/spotify/status, /login/spotify,
+  /api/criar-spotify, /api/criar-youtube, /api/cota) -- dado de verdade, não
+  maquete. Servido em http://127.0.0.1:5001/prototipo_final.html
+
+  Ainda um protótipo (arquivo separado de index.html, por segurança), mas é o
+  candidato pronto pra virar o produto real, pendente de aprovação visual no
+  navegador -- a única coisa que não consigo verificar automatizado.
+--><link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<style>
+  /* ============================================================
+     TOKENS COMPARTILHADOS — mesma identidade do produto (dark,
+     verde-lima, glow), elevada com camadas de vidro.
+     ============================================================ */
+  :root {
+    --ground: #050705;
+    --ground-2: #0A0F0A;
+    --surface: rgba(255,255,255,0.045);
+    --surface-2: rgba(255,255,255,0.075);
+    --glass-border: rgba(255,255,255,0.10);
+    --glass-border-strong: rgba(255,255,255,0.20);
+    --text: #F4F8F3;
+    --text-dim: #A9BCAB;
+    --text-faint: #64756A;
+    --accent-1: #A9F44E;
+    --accent-2: #4CC96B;
+    --accent-3: #1F8A46;
+    --accent-grad: linear-gradient(120deg, var(--accent-1), var(--accent-3));
+    --spotify: #1DB954;
+    --bad: #E7897C;
+    --blur: 22px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--ground); height: 100%; }
+  body {
+    color: var(--text); font-family: 'Plus Jakarta Sans', -apple-system, 'Segoe UI', sans-serif;
+    line-height: 1.5; overflow-x: hidden; min-height: 100vh; position: relative;
+  }
+  h1, h2, h3 { font-family: 'Baloo 2', 'Plus Jakarta Sans', sans-serif; text-wrap: balance; margin: 0; }
+  .num { font-variant-numeric: tabular-nums; }
+  button { font-family: inherit; cursor: pointer; color: inherit; }
+  ::selection { background: var(--accent-1); color: #06210F; }
+
+  /* Vidro: uma classe utilitária reusada pelas três variantes. */
+  .glass {
+    background: var(--surface);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
+    backdrop-filter: blur(var(--blur)) saturate(140%);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 24px 60px -24px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .glass-strong {
+    background: var(--surface-2);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    backdrop-filter: blur(28px) saturate(160%);
+    border: 1px solid var(--glass-border-strong);
+    box-shadow: 0 32px 80px -20px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.09);
+  }
+
+  .wordmark { font-family: 'Baloo 2', sans-serif; font-weight: 800; line-height: 1; }
+  .wordmark .sound { color: var(--text); }
+  /* Verde sólido e legível (o mesmo predominante do logo.jpeg, amostrado por
+     pixel), não o gradiente que antes descambava pro verde escuro ilegível
+     na metade do texto. */
+  .wordmark .park { color: #4DC540; }
+
+  .spotify-pill {
+    display: inline-flex; align-items: center; gap: 10px; border: none; border-radius: 999px;
+    background: var(--spotify); color: #04170B; font-weight: 800; padding: 14px 24px; font-size: 14.5px;
+    text-decoration: none; /* é um <a>: sem isso, o sublinhado padrão de link brigava com o visual de botão */
+    box-shadow: 0 12px 30px -8px rgba(29,185,84,0.55);
+    transition: transform 0.18s cubic-bezier(.2,.8,.2,1), box-shadow 0.18s ease;
+  }
+  .spotify-pill:hover { transform: translateY(-2px) scale(1.015); box-shadow: 0 18px 40px -8px rgba(29,185,84,0.7); }
+  .spotify-pill:active { transform: translateY(0) scale(0.98); }
+  .spotify-pill svg { width: 20px; height: 20px; flex: none; }
+  .spotify-pill:disabled { opacity: 0.5; cursor: wait; transform: none; }
+
+  .btn-ghost {
+    border: 1px solid var(--glass-border-strong); background: transparent; color: var(--text-dim);
+    border-radius: 999px; padding: 10px 18px; font-weight: 700; font-size: 13px;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+  .btn-ghost:hover { border-color: var(--accent-1); color: var(--text); background: rgba(169,244,78,0.06); }
+
+  /* Ambiente: um glow radial suave atrás de tudo, comum às três variantes. */
+  #ambient { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  #ambient canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ambient-glow {
+    position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.35;
+    transition: background 1.1s ease, transform 1.1s cubic-bezier(.2,.8,.2,1);
+  }
+
+
+  /* ============================================================
+     BARRA DE PROTÓTIPO — não faz parte do design avaliado.
+     ============================================================ */
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<div id="ambient"><canvas id="ambient-canvas"></canvas></div>
+
+<div id="app-root"></div>
+
+<script>
+/* ================================================================
+   CONTROLLER — estado e chamadas reais ao backend, compartilhados
+   pelas três variantes. Cada variante só cuida de como renderizar;
+   nenhuma reimplementa busca/prévia/login/criação por conta própria.
+   ================================================================ */
+const Ctrl = (() => {
+  const state = {
+    vocab: {}, combinacoes: {}, tamanhoMaximo: 30, vocabulario: [],
+    selected: [], modo: "faixas", tamanho: 15, minutos: 30,
+    faixaInicial: null, faixaInicialInfo: null, moodsCompativeisSemente: null,
+    resultados: [], buscando: false,
+    preview: null,        // { faixas, duracao_total, custo_cota, faixa_inicial }
+    ultimaPreviewIds: null,
+    spotify: { configurado: false, logado: false, nome: null },
+    cota: { usadas: 0, restantes: 10000, limite: 10000 },
+    criando: false,
+    resultadoCriacao: null, // { url, adicionadas, total } | { erro }
+  };
+  const ORDER = ["Energetico", "Feliz", "Dancante", "Calmo", "Melancolico", "Intenso", "Instrumental", "Acustico"];
+  const LABELS = {
+    Energetico: "Energético", Feliz: "Feliz", Dancante: "Dançante", Calmo: "Calmo",
+    Melancolico: "Melancólico", Intenso: "Intenso", Instrumental: "Instrumental", Acustico: "Acústico",
+  };
+  const ICONS = {
+    Energetico: '<path d="M13 2 5 13h6l-1 9 9-11h-6l0-9Z"/>',
+    Feliz: '<circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/><g stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></g>',
+    Dancante: '<circle cx="7" cy="17.5" r="2.3" fill="currentColor" stroke="none"/><circle cx="16" cy="15.2" r="2.3" fill="currentColor" stroke="none"/><path d="M9.3 17.5V6.3l9-1.8v10.7" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+    Calmo: '<g stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M2 9c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 15.5c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/></g>',
+    Melancolico: '<path d="M12 3c3.4 4.1 6 7.6 6 10.4a6 6 0 1 1-12 0C6 10.6 8.6 7.1 12 3Z"/>',
+    Intenso: '<path d="M12 22c4 0 7-3 7-7 0-3.6-2.6-5.6-3.8-8.4-.7 1.6-.8 3-2.2 3-1 0-1.7-.9-1.7-2.4C8.6 9 6.5 11.4 6.5 15c0 3.9 3.1 7 5.5 7Z"/>',
+    Instrumental: '<g><rect x="4" y="10.5" width="3.2" height="9" rx="1.2"/><rect x="10.4" y="4.5" width="3.2" height="15" rx="1.2"/><rect x="16.8" y="8" width="3.2" height="11.5" rx="1.2"/></g>',
+    Acustico: '<path d="M4 20C4 10.5 11.7 4.5 20 4c0 8.2-5.9 16-16 16Z"/><path d="M6.3 17.8C10 14 14 10 18.7 5.4" stroke="#0A0F09" stroke-opacity="0.35" stroke-width="1.4" fill="none" stroke-linecap="round"/>',
+  };
+  const V_MIN = 0.127, V_MAX = 0.84, E_MIN = 0.240, E_MAX = 0.941;
+  function corDoMood(energy, valence) {
+    const t = Math.min(1, Math.max(0, (valence - V_MIN) / (V_MAX - V_MIN)));
+    const s = Math.min(1, Math.max(0, (energy - E_MIN) / (E_MAX - E_MIN)));
+    const hue = (300 - 205 * t + 360) % 360;
+    return `oklch(${(34 + 20 * s) / 100} ${(0.11 + 0.08 * s).toFixed(3)} ${hue.toFixed(0)})`;
+  }
+
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // Link de busca no YouTube por faixa -- mesmo padrão do produto real
+  // (linkYoutube em index.html): zero custo de API, só abre uma busca.
+  const linkYoutube = (nome, artista) => "https://www.youtube.com/results?search_query=" + encodeURIComponent(nome + " " + artista);
+
+  let ouvintes = [];
+  function notificar() { ouvintes.forEach((fn) => fn(state)); }
+  function onChange(fn) { ouvintes.push(fn); }
+
+  function valenciaEnergiaMedias() {
+    if (!state.selected.length) return null;
+    const e = state.selected.reduce((s, k) => s + state.vocab[k].energy, 0) / state.selected.length;
+    const v = state.selected.reduce((s, k) => s + state.vocab[k].valence, 0) / state.selected.length;
+    return { energy: e, valence: v, cor: corDoMood(e, v) };
+  }
+
+  function conflitoCom(key) {
+    if (state.selected.includes(key)) return null;
+    const lista = state.combinacoes[key];
+    if (!lista) return null;
+    return state.selected.find((k) => !lista.includes(k)) || null;
+  }
+  function incompativelComSemente(key) {
+    return state.moodsCompativeisSemente !== null && !state.moodsCompativeisSemente.includes(key);
+  }
+  function statusMood(key) {
+    const pos = state.selected.indexOf(key);
+    const impede = conflitoCom(key);
+    const foraDaSemente = incompativelComSemente(key);
+    const cheio = pos < 0 && !impede && !foraDaSemente && state.selected.length >= 3;
+    return { selecionado: pos >= 0, posicao: pos, bloqueado: Boolean(impede) || foraDaSemente || cheio, impede, foraDaSemente, cheio };
+  }
+
+  async function toggleMood(key) {
+    const st = statusMood(key);
+    if (st.selecionado) {
+      state.selected = state.selected.filter((k) => k !== key);
+    } else if (st.bloqueado) {
+      return { recusado: true, motivo: st.impede ? "oposto" : st.foraDaSemente ? "semente" : "cheio", chave: st.impede };
+    } else {
+      state.selected.push(key);
+    }
+    state.preview = null; state.resultadoCriacao = null;
+    notificar();
+    return { recusado: false };
+  }
+
+  async function iniciar() {
+    const [vocabResp, spotResp, cotaResp] = await Promise.all([
+      fetch("/api/vocabulario").then((r) => r.json()),
+      fetch("/api/spotify/status").then((r) => r.json()).catch(() => ({ configurado: false, logado: false })),
+      fetch("/api/cota").then((r) => r.json()).catch(() => state.cota),
+    ]);
+    state.vocab = {}; ORDER.forEach((k) => { if (vocabResp.moods[k]) state.vocab[k] = vocabResp.moods[k]; });
+    state.vocabulario = ORDER.filter((k) => vocabResp.moods[k]);
+    state.combinacoes = vocabResp.combinacoes || {};
+    state.tamanhoMaximo = vocabResp.tamanho_maximo || 30;
+    state.spotify = spotResp;
+    state.cota = cotaResp;
+    notificar();
+  }
+
+  function setModo(m) { state.modo = m; state.preview = null; state.resultadoCriacao = null; notificar(); }
+  function setTamanho(n) { state.tamanho = n; state.preview = null; notificar(); }
+  function setMinutos(m) { state.minutos = m; state.preview = null; notificar(); }
+
+  let buscaToken = 0;
+  async function buscarFaixas(q) {
+    const meuToken = ++buscaToken;
+    if (q.trim().length < 2) { state.resultados = []; notificar(); return; }
+    state.buscando = true; notificar();
+    try {
+      const data = await fetch("/api/buscar-faixa?q=" + encodeURIComponent(q)).then((r) => r.json());
+      if (meuToken !== buscaToken) return;
+      state.resultados = data.faixas || [];
+    } catch (e) { if (meuToken === buscaToken) state.resultados = []; }
+    finally { if (meuToken === buscaToken) { state.buscando = false; notificar(); } }
+  }
+
+  async function escolherSemente(trackId, nome, artista) {
+    state.faixaInicial = trackId;
+    state.faixaInicialInfo = { nome, artista };
+    state.resultados = [];
+    state.preview = null; state.resultadoCriacao = null;
+    notificar();
+
+    let removidos = [];
+    try {
+      const data = await fetch("/api/moods-compativeis?track_id=" + encodeURIComponent(trackId)).then((r) => r.json());
+      state.moodsCompativeisSemente = data.moods || null;
+    } catch (e) { state.moodsCompativeisSemente = null; }
+    if (state.moodsCompativeisSemente) {
+      removidos = state.selected.filter((k) => !state.moodsCompativeisSemente.includes(k));
+      if (removidos.length) state.selected = state.selected.filter((k) => state.moodsCompativeisSemente.includes(k));
+    }
+    notificar();
+    return { removidos };
+  }
+
+  function limparSemente() {
+    state.faixaInicial = null; state.faixaInicialInfo = null; state.moodsCompativeisSemente = null;
+    notificar();
+  }
+
+  async function gerarPreview() {
+    if (!state.selected.length) return;
+    const corpo = { palavras: state.selected, modo: state.modo, n: state.tamanho, minutos: state.minutos, faixa_inicial: state.faixaInicial };
+    try {
+      const resp = await fetch("/api/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
+      const data = await resp.json();
+      if (!resp.ok) { state.preview = { erro: data.erro || "Erro desconhecido" }; notificar(); return state.preview; }
+      state.preview = data;
+      state.ultimaPreviewIds = data.faixas.map((f) => f.track_id);
+      state.resultadoCriacao = null;
+      notificar();
+      return data;
+    } catch (e) {
+      state.preview = { erro: "Não consegui falar com o servidor." };
+      notificar();
+      return state.preview;
+    }
+  }
+
+  async function refreshCota() {
+    try { state.cota = await fetch("/api/cota").then((r) => r.json()); notificar(); } catch (e) {}
+  }
+  async function refreshSpotify() {
+    try { state.spotify = await fetch("/api/spotify/status").then((r) => r.json()); notificar(); } catch (e) {}
+  }
+
+  async function criarSpotify(publica) {
+    if (!state.ultimaPreviewIds) return;
+    state.criando = true; state.resultadoCriacao = null; notificar();
+    try {
+      const resp = await fetch("/api/criar-spotify", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ palavras: state.selected, track_ids: state.ultimaPreviewIds, publica: Boolean(publica) }),
+      });
+      const data = await resp.json();
+      state.resultadoCriacao = resp.ok ? data : { erro: data.erro || "Erro desconhecido" };
+    } catch (e) {
+      state.resultadoCriacao = { erro: "Não consegui falar com o servidor." };
+    } finally {
+      state.criando = false; notificar();
+    }
+  }
+
+  return {
+    state, ORDER, LABELS, ICONS, escapeHtml, linkYoutube, corDoMood, valenciaEnergiaMedias,
+    conflitoCom, incompativelComSemente, statusMood, toggleMood,
+    iniciar, setModo, setTamanho, setMinutos, buscarFaixas, escolherSemente, limparSemente,
+    gerarPreview, criarSpotify, refreshSpotify, onChange,
+  };
+})();
+</script>
+
+<script>
+/* ================================================================
+   AMBIENTE — glow radial de fundo (three.js, leve), suave, para a
+   página não ficar chapada atrás dos painéis de vidro.
+   ================================================================ */
+(function ambiente() {
+  const host = document.getElementById("ambient");
+  const g1 = document.createElement("div"); g1.className = "ambient-glow";
+  g1.style.cssText = "width:60vw;height:60vw;left:-10vw;top:-20vw;background:radial-gradient(closest-side,rgba(169,244,78,0.5),transparent 70%)";
+  const g2 = document.createElement("div"); g2.className = "ambient-glow";
+  g2.style.cssText = "width:50vw;height:50vw;right:-15vw;bottom:-15vw;background:radial-gradient(closest-side,rgba(76,201,107,0.35),transparent 70%)";
+  host.appendChild(g1); host.appendChild(g2);
+  if (typeof gsap !== "undefined") {
+    gsap.to(g1, { x: 60, y: 30, duration: 18, repeat: -1, yoyo: true, ease: "sine.inOut" });
+    gsap.to(g2, { x: -40, y: -50, duration: 22, repeat: -1, yoyo: true, ease: "sine.inOut" });
+  }
+})();
+</script>
+
+<script>
+/* ================================================================
+   DISCO — versão reutilizável do vinil WebGL do produto (index.html),
+   simplificada (sem braço/agulha) e com a cor do label parametrizável,
+   para a variante C poder reagir ao clima escolhido. Compartilhada
+   entre as variantes A e C.
+   ================================================================ */
+function montarDisco(container, corLabel) {
+  const estado = { spinGroup: null, labelMat: null, velocidade: (Math.PI * 2) / 9 };
+  try {
+    if (!container || typeof THREE === "undefined") return estado;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    if (!renderer || !renderer.getContext()) return estado;
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 50);
+    camera.position.set(0, 3.3, 4.6);
+    camera.lookAt(0, 0.05, 0);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+    const keyLight = new THREE.DirectionalLight(0xfff3e0, 1.9); keyLight.position.set(2.3, 3.8, 2.4); scene.add(keyLight);
+    const rimLight = new THREE.DirectionalLight(0x9dff6a, 2.4); rimLight.position.set(-2.8, 1.6, -2.2); scene.add(rimLight);
+    const fillLight = new THREE.PointLight(0x4cc96b, 1.1, 12); fillLight.position.set(0, -1.4, 2.4); scene.add(fillLight);
+
+    function grooveCanvas(size) {
+      const c = document.createElement("canvas"); c.width = c.height = size;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#1a1e1c"; ctx.fillRect(0, 0, size, size);
+      const cx = size / 2, cy = size / 2, maxR = size / 2;
+      for (let r = maxR; r > maxR * 0.2; r -= 1.4) {
+        const tone = 26 + Math.round(Math.random() * 14);
+        ctx.strokeStyle = `rgba(${tone + 14},${tone + 18},${tone + 14},0.6)`;
+        ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.strokeStyle = "rgba(140,240,106,0.55)"; ctx.lineWidth = size * 0.012;
+      ctx.beginPath(); ctx.arc(cx, cy, maxR - ctx.lineWidth, 0, Math.PI * 2); ctx.stroke();
+      return c;
+    }
+    const grooveTexture = new THREE.CanvasTexture(grooveCanvas(512));
+    grooveTexture.colorSpace = THREE.SRGBColorSpace;
+
+    function labelCanvas(size, corA, corB) {
+      const c = document.createElement("canvas"); c.width = c.height = size;
+      const ctx = c.getContext("2d");
+      const cx = size / 2, cy = size / 2, r = size / 2;
+      const grad = ctx.createLinearGradient(0, 0, size, size);
+      grad.addColorStop(0, corA); grad.addColorStop(1, corB);
+      ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = size * 0.01;
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "#08090a"; ctx.beginPath(); ctx.arc(cx, cy, r * 0.07, 0, Math.PI * 2); ctx.fill();
+      return c;
+    }
+    const [corA, corB] = corLabel || ["#A9F44E", "#1F8A46"];
+    const labelTexture = new THREE.CanvasTexture(labelCanvas(256, corA, corB));
+    labelTexture.colorSpace = THREE.SRGBColorSpace;
+
+    const DISC_RADIUS = 1.5, DISC_HEIGHT = 0.05;
+    const vinylMat = new THREE.MeshStandardMaterial({ color: 0x1c211f, roughness: 0.5, metalness: 0.12 });
+    const grooveMat = new THREE.MeshStandardMaterial({ map: grooveTexture, color: 0xffffff, roughness: 0.42, metalness: 0.12 });
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(DISC_RADIUS, DISC_RADIUS, DISC_HEIGHT, 96, 1), [vinylMat, grooveMat, grooveMat]);
+    const spinGroup = new THREE.Group(); spinGroup.add(disc);
+    const labelMat = new THREE.MeshStandardMaterial({ map: labelTexture, roughness: 0.5, metalness: 0.05 });
+    const label = new THREE.Mesh(new THREE.CylinderGeometry(DISC_RADIUS * 0.33, DISC_RADIUS * 0.33, DISC_HEIGHT * 0.4, 48, 1), labelMat);
+    label.position.y = DISC_HEIGHT / 2 + DISC_HEIGHT * 0.2;
+    spinGroup.add(label);
+    scene.add(spinGroup);
+    estado.spinGroup = spinGroup; estado.labelMat = labelMat; estado.labelTexture = labelTexture; estado.labelCanvas = labelCanvas;
+
+    function resize() {
+      const w = container.clientWidth || 320, h = container.clientHeight || 320;
+      if (!w || !h) return;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h; camera.updateProjectionMatrix();
+    }
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(resize).observe(container);
+    window.addEventListener("resize", resize);
+    resize();
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      spinGroup.rotation.y += clock.getDelta() * estado.velocidade;
+      renderer.render(scene, camera);
+    }
+    animate();
+  } catch (e) { /* peça decorativa: falha ignorada */ }
+  return estado;
+}
+
+/* Recolore o label do disco em runtime (variante C: reage ao clima). */
+function recolorirDisco(estado, corA, corB) {
+  if (!estado || !estado.labelMat) return;
+  const nova = new THREE.CanvasTexture(estado.labelCanvas(256, corA, corB));
+  nova.colorSpace = THREE.SRGBColorSpace;
+  estado.labelMat.map = nova;
+  estado.labelMat.needsUpdate = true;
+}
+</script>
+<style>
+  /* ============================================================
+     UI FINAL — cabeçalho com disco reativo, órbita de moods livre,
+     painéis, modal de login.
+     ============================================================ */
+  .app-shell { max-width: 1180px; margin: 0 auto; padding: 24px 24px 100px; position: relative; z-index: 1; }
+
+  .app-header { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 4px; }
+  .app-topbar { width: 100%; display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .app-topbar .wordmark { font-size: 19px; }
+  /* Mesmo tratamento do produto real (index.html .brand-lockup): ícone
+     recortado do logo.jpeg, já com transparência de verdade (confirmado o
+     canal alfa), não o JPEG bruto -- esse tem fundo preto sólido e traz a
+     tagline + selo do Spotify embutidos na imagem, que não fazem sentido
+     soltos dentro do topo da página. */
+  .brand-lockup { display: flex; align-items: center; gap: 9px; }
+  .brand-lockup img { width: 30px; height: 30px; display: block; filter: drop-shadow(0 0 10px rgba(169,244,78,0.25)); }
+  .spotify-chip { display: flex; align-items: center; gap: 8px; padding: 7px 14px 7px 7px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--text-dim); }
+  .spotify-chip .dot { width: 26px; height: 26px; border-radius: 50%; background: var(--spotify); display: grid; place-items: center; color: #04170B; }
+  .spotify-chip .dot svg { width: 14px; height: 14px; }
+
+  /* Header igual ao da landing (icon-mark.png + wordmark), com login direto
+     e menu hambúrguer -- mesma estrutura visual das duas telas. */
+  .nav-right { display: flex; align-items: center; gap: 10px; position: relative; }
+  .nav-login-btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 999px;
+    font-weight: 700; font-size: 13px; white-space: nowrap; text-decoration: none;
+    background: var(--accent-grad); color: #06210F; box-shadow: 0 12px 26px -10px rgba(169,244,78,0.45);
+  }
+  .nav-login-btn:hover { filter: brightness(1.06); }
+  .ham-btn {
+    width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--glass-border-strong); background: transparent;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; flex: none;
+  }
+  .ham-btn span { width: 15px; height: 2px; background: var(--text-dim); border-radius: 2px; transition: background 0.2s ease; }
+  .ham-btn:hover span { background: var(--text); }
+  .ham-menu {
+    position: absolute; top: 44px; right: 0; min-width: 210px; background: #10140F; border: 1px solid var(--glass-border-strong);
+    border-radius: 16px; padding: 8px; display: flex; flex-direction: column; gap: 2px; z-index: 80;
+    box-shadow: 0 20px 50px -12px rgba(0,0,0,0.9);
+  }
+  .ham-menu[hidden] { display: none; }
+  .ham-item { background: none; border: none; text-align: left; padding: 10px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--text-dim); text-decoration: none; display: block; cursor: pointer; }
+  .ham-item:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+  .ham-divider { height: 1px; background: var(--glass-border); margin: 6px 4px; }
+  /* Mesmo bug de cascata já visto: uma classe que define display próprio
+     vence a regra nativa [hidden]{display:none} em especificidade igual. */
+  .nav-login-btn[hidden], .ham-item[hidden] { display: none; }
+
+  /* Órbita com o disco de volta no centro -- desta vez com folga calculada
+     pra não repetir o problema original (o glow do disco invadindo os nós
+     mais próximos). Nó: raio 36px. Órbita: raio 195px -> borda interna do nó
+     mais próximo fica a 159px do centro. Disco: raio 95px (190px de lado) +
+     glow de 25px de blur = alcance máximo 120px. Folga real: 39px, sempre. */
+  .mood-stage { position: relative; display: grid; place-items: center; height: 490px; margin: 4px auto 6px; max-width: 560px; }
+  /* Centralização explícita (top/left + margem negativa), a mesma técnica já
+     usada em .mood-node -- não depende de como `place-items` do .mood-stage
+     trata um filho position:absolute sem inset definido, que varia por
+     mecanismo do spec e eu não deveria supor sem testar num navegador real. */
+  .disc-center { position: absolute; top: 50%; left: 50%; width: 190px; height: 190px; margin: -95px 0 0 -95px; display: grid; place-items: center; }
+  .disc-glow {
+    position: absolute; inset: -25px; border-radius: 50%; filter: blur(25px); opacity: 0.5; pointer-events: none;
+    transition: background 0.8s ease;
+  }
+  .app-disc { position: absolute; inset: 0; }
+  /* Fora de .mood-stage de propósito: por dentro, dependia de caber numa
+     caixa de altura fixa sem tocar o nó de baixo da órbita (Melancólico) --
+     confirmado por screenshot que estava encostando. Como bloco normal,
+     abaixo do palco, não tem como colidir com a órbita nunca. */
+  .caption { font-size: 12px; color: var(--text-faint); text-align: center; margin: 6px 0 18px; transition: opacity 0.3s ease; }
+  .mood-orbit { position: absolute; inset: 0; }
+  .mood-node {
+    position: absolute; top: 50%; left: 50%; width: 72px; height: 72px; margin: -36px 0 0 -36px;
+    border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    color: var(--text-dim); transition: transform 0.35s cubic-bezier(.2,.8,.2,1), background 0.25s ease, border-color 0.25s ease, opacity 0.3s ease, color 0.25s ease;
+  }
+  .mood-node svg { width: 20px; height: 20px; }
+  .mood-node .lb { font-size: 10px; font-weight: 700; }
+  .mood-node.shown { opacity: 1; }
+  .mood-node:not(.shown) { opacity: 0; }
+  .mood-node:hover:not(.blocked) { border-color: var(--accent-1); color: var(--text); transform: translate(var(--nx), var(--ny)) scale(1.08); }
+  .mood-node.selected { background: var(--accent-grad); border-color: transparent; color: #06210F; box-shadow: 0 10px 26px -8px rgba(169,244,78,0.6); }
+  .mood-node.selected .lb { color: #06210F; }
+  .mood-node.blocked { opacity: 0.28; filter: saturate(0.2); cursor: not-allowed; }
+  .mood-node .ord {
+    position: absolute; top: -3px; right: -1px; width: 18px; height: 18px; border-radius: 50%; background: var(--accent-1);
+    color: #06210F; font-size: 10px; font-weight: 800; display: grid; place-items: center; opacity: 0; transform: scale(0.5);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .mood-node.selected .ord { opacity: 1; transform: scale(1); }
+  @media (max-width: 680px) {
+    /* Encolhe nós E disco pelo mesmo fator (0.76): a folga entre eles é
+       proporcional, então continua segura em qualquer tamanho -- sem isso o
+       disco ficava do tamanho de sempre enquanto os nós se aproximavam dele. */
+    .mood-stage { height: 380px; }
+    .mood-node { transform: translate(calc(var(--nx) * 0.76), calc(var(--ny) * 0.76)) !important; }
+    .disc-center { width: 144px; height: 144px; margin: -72px 0 0 -72px; }
+    .disc-glow { inset: -19px; filter: blur(19px); }
+    /* Botão de login + hambúrguer + logo não cabem lado a lado nessa largura
+       (fica tudo espremido, o "park" do wordmark encosta no pill) -- some o
+       texto do botão, o login continua acessível pelo próprio hambúrguer. */
+    .nav-login-btn { display: none; }
+  }
+
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 860px) { .panels { grid-template-columns: 1fr; } }
+  .card { border-radius: 24px; padding: 22px; }
+  .card h3 { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
+  .card .hint { font-size: 12px; color: var(--text-faint); margin: 0 0 14px; }
+
+  .seed-search { position: relative; margin-bottom: 12px; }
+  .seed-search input {
+    width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 12px;
+    color: var(--text); font-family: inherit; font-size: 13px; padding: 11px 13px; outline: none;
+  }
+  .seed-search input:focus { border-color: var(--accent-1); }
+  .seed-search .res {
+    position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 6px); max-height: 220px; overflow-y: auto;
+    border-radius: 14px; padding: 6px;
+    /* Opaco de propósito, não `.glass`/`.glass-strong`: um dropdown flutuando
+       sobre outros controles precisa ser inequívoco -- translúcido deixava o
+       seletor de duração visível (e clicável) por baixo dele, então o clique
+       em "60 min" caía no dropdown, não no botão. */
+    background: #10140F; border: 1px solid var(--glass-border-strong);
+    box-shadow: 0 20px 50px -12px rgba(0,0,0,0.9);
+  }
+  .res-row { display: flex; align-items: center; gap: 8px; padding: 8px 9px; border-radius: 9px; cursor: pointer; }
+  .res-row:hover { background: rgba(255,255,255,0.06); }
+  .res-row .info { min-width: 0; flex: 1; }
+  .res-row .t { font-size: 12.5px; font-weight: 700; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .res-row .ar { font-size: 11px; color: var(--text-dim); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .res-empty { padding: 12px; font-size: 12px; color: var(--text-faint); text-align: center; }
+
+  .seed-chip { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; margin-bottom: 14px; border: 1px solid var(--accent-1); background: rgba(169,244,78,0.06); }
+  .seed-chip .t { font-size: 12.5px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seed-chip button { background: none; border: none; color: var(--text-faint); font-size: 14px; }
+  /* `display:flex` numa classe vence a regra nativa `[hidden]{display:none}`
+     do navegador em empate de especificidade (CSS de autor tem prioridade
+     sobre o padrão do navegador). `chip.hidden = true` no JS setava o
+     atributo certinho, mas visualmente nada mudava -- o mesmo problema
+     também afetava .spotify-chip (mesma classe com display:flex), corrigido
+     junto abaixo. */
+  .seed-chip[hidden], .spotify-chip[hidden] { display: none; }
+
+  .modo-switch { display: flex; gap: 4px; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 3px; margin-bottom: 12px; }
+  .modo-switch button { flex: 1; padding: 8px; border: none; background: transparent; border-radius: 9px; color: var(--text-dim); font-weight: 700; font-size: 12px; }
+  .modo-switch button.on { background: var(--accent-grad); color: #06210F; }
+  .stepper { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .stepper .pill { flex: 1 1 auto; text-align: center; padding: 9px 4px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-dim); font-weight: 700; font-size: 13px; }
+  .stepper .pill.on { background: var(--accent-grad); color: #06210F; border-color: transparent; }
+
+  .primary-btn {
+    width: 100%; padding: 15px; border-radius: 14px; border: none; background: var(--accent-grad); color: #06210F;
+    font-weight: 800; font-size: 14px; transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .primary-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 28px -10px rgba(169,244,78,0.5); }
+  .primary-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .tracklist { list-style: none; margin: 14px 0 0; padding: 0; max-height: 340px; overflow-y: auto; }
+  .tracklist li { display: flex; align-items: center; gap: 9px; padding: 9px 6px; border-radius: 10px; opacity: 0; transform: translateY(6px); animation: track-in 0.4s cubic-bezier(.2,.8,.2,1) forwards; }
+  @keyframes track-in { to { opacity: 1; transform: none; } }
+  .tracklist .n { width: 20px; font-size: 11px; color: var(--text-faint); flex: none; }
+  .tracklist .info { flex: 1; min-width: 0; }
+  .tracklist .t { font-size: 12.5px; font-weight: 700; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tracklist .ar { font-size: 11px; color: var(--text-dim); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tracklist .yt-link {
+    flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--glass-border-strong);
+    display: grid; place-items: center; color: var(--text-faint); text-decoration: none; font-size: 9px;
+  }
+  .tracklist .yt-link:hover { color: var(--accent-1); border-color: var(--accent-1); }
+  .tracklist .star { background: none; border: 1px solid var(--glass-border-strong); border-radius: 50%; width: 22px; height: 22px; font-size: 10px; color: var(--text-faint); flex: none; }
+  .tracklist li.is-seed .star { background: var(--accent-1); color: #06210F; border-color: transparent; }
+
+  .create-row { margin-top: 16px; }
+  .result-box { margin-top: 14px; padding: 13px 15px; border-radius: 14px; border: 1px solid var(--accent-3); background: rgba(76,201,107,0.08); font-size: 13px; }
+  .result-box.erro { border-color: var(--bad); background: rgba(231,137,124,0.08); color: var(--bad); }
+  .result-box a { color: var(--accent-1); font-weight: 700; word-break: break-all; }
+
+  /* Gate de login: modal de vidro sobre backdrop desfocado -- a escolha
+     preferida (sobre o passo-a-passo e o bottom sheet, ambos descartados). */
+  .gate-backdrop {
+    position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 24px;
+    background: rgba(2,4,2,0.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    opacity: 0; pointer-events: none; transition: opacity 0.28s ease;
+  }
+  .gate-backdrop.on { opacity: 1; pointer-events: auto; }
+  .gate-card { width: min(420px, 100%); border-radius: 26px; padding: 34px 30px; text-align: center; transform: scale(0.92) translateY(10px); transition: transform 0.32s cubic-bezier(.2,.8,.2,1); }
+  .gate-backdrop.on .gate-card { transform: scale(1) translateY(0); }
+  .gate-card .icon { width: 56px; height: 56px; border-radius: 50%; background: var(--spotify); display: grid; place-items: center; margin: 0 auto 18px; }
+  .gate-card .icon svg { width: 28px; height: 28px; }
+  .gate-card h2 { font-size: 20px; margin-bottom: 8px; }
+  .gate-card p { font-size: 13px; color: var(--text-dim); margin: 0 0 22px; }
+  .gate-card .fechar { display: block; margin: 14px auto 0; background: none; border: none; color: var(--text-faint); font-size: 12.5px; }
+
+  /* Aviso quando a semente escolhida remove um mood da seleção -- sem isso, a
+     seleção some da tela sem explicação nenhuma (achado ao ver o screenshot:
+     escolher uma semente incompatível com "Calmo" limpava o mood selecionado
+     em silêncio). */
+  .toast {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%) translateY(-10px);
+    z-index: 300; max-width: min(420px, 90vw); padding: 12px 18px; border-radius: 14px;
+    font-size: 13px; text-align: center; opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    background: #10140F; border: 1px solid var(--glass-border-strong);
+    box-shadow: 0 20px 50px -12px rgba(0,0,0,0.9);
+  }
+  .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast b { color: var(--accent-1); }
+</style>
+<script>
+const App = (() => {
+  // Ícone oficial do Spotify (assets/spotify.svg), com a cor adaptada por
+  // currentColor -- cada lugar que usa o ícone já controla `color` no CSS
+  // (chip com fundo verde, botão, gate de login), então basta herdar.
+  const SPOTIFY_SVG = '<svg viewBox="0 0 48 48"><g transform="translate(-200 -460)"><path fill="currentColor" d="M238.16 481.36c-7.68-4.56-20.52-5.04-27.84-2.76-1.2.36-2.4-.36-2.76-1.44-.36-1.2.36-2.4 1.44-2.76 8.52-2.52 22.56-2.04 31.44 3.24 1.08.6 1.44 2.04.84 3.12-.6.84-2.04 1.2-3.12.6m-.24 6.72c-.6.84-1.68 1.2-2.52.6-6.48-3.96-16.32-5.16-23.88-2.76-.96.24-2.04-.24-2.28-1.2-.24-.96.24-2.04 1.2-2.28 8.76-2.64 19.56-1.32 27 3.24.72.36 1.08 1.56.48 2.4m-2.88 6.6c-.48.72-1.32.96-2.04.48-5.64-3.48-12.72-4.2-21.12-2.28-.84.24-1.56-.36-1.8-1.08-.24-.84.36-1.56 1.08-1.8 9.12-2.04 17.04-1.2 23.28 2.64.84.36.96 1.32.6 2.04M224 460c-13.2 0-24 10.8-24 24s10.8 24 24 24 24-10.8 24-24-10.68-24-24-24"/></g></svg>';
+  let root, discEstado = null;
+  let aguardandoLoginParaCriar = false;
+
+  function loginUrl() {
+    return "/login/spotify?next=" + encodeURIComponent(location.pathname);
+  }
+
+  function posOrbit(i, n, raio) {
+    const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
+    return { x: Math.cos(ang) * raio, y: Math.sin(ang) * raio };
+  }
+
+  function template() {
+    return `
+      <div class="app-shell">
+        <div class="app-header">
+          <div class="app-topbar">
+            <a class="brand-lockup" href="/">
+              <img src="icon-mark.png" alt="" aria-hidden="true">
+              <span class="wordmark"><span class="sound">sound</span><span class="park">park</span></span>
+            </a>
+            <div class="nav-right">
+              <a class="nav-login-btn" id="nav-login-btn" href="${loginUrl()}">Continuar com Spotify</a>
+              <span class="spotify-chip glass" id="spotify-chip" hidden></span>
+              <button type="button" class="ham-btn" id="ham-btn" aria-label="Abrir menu">
+                <span></span><span></span><span></span>
+              </button>
+              <div class="ham-menu glass-strong" id="ham-menu" hidden>
+                <a class="ham-item" href="/">Início</a>
+                <button type="button" class="ham-item" id="ham-como">Como funciona</button>
+                <button type="button" class="ham-item" id="ham-limpar">Limpar clima e semente</button>
+                <div class="ham-divider" id="ham-divider-sair" hidden></div>
+                <a class="ham-item" id="ham-sair" href="/logout?next=${encodeURIComponent(location.pathname)}" hidden>Sair</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mood-stage">
+          <div class="disc-center"><div class="disc-glow" id="disc-glow"></div><div class="app-disc" id="app-disc"></div></div>
+          <div class="mood-orbit" id="mood-orbit"></div>
+        </div>
+        <div class="caption" id="disc-caption">Escolha um clima pra ele reagir</div>
+
+        <div class="panels">
+          <section class="card glass">
+            <h3>Escolha o clima</h3>
+            <p class="hint">Toque em até 3 pontos ao redor. Opostos se apagam sozinhos.</p>
+            <div class="seed-search">
+              <input type="text" id="seed-input" placeholder="Começar por uma música específica? (opcional)" autocomplete="off">
+              <div class="res glass-strong" id="seed-res" hidden></div>
+            </div>
+            <div class="seed-chip glass" id="seed-chip" hidden>
+              <span style="color:var(--accent-1)">★</span>
+              <span class="t" id="seed-chip-t"></span>
+              <button id="seed-limpar">✕</button>
+            </div>
+            <div class="modo-switch" id="modo-switch">
+              <button data-modo="faixas" class="on">Por faixas</button>
+              <button data-modo="tempo">Por duração</button>
+            </div>
+            <div class="stepper" id="stepper"></div>
+            <button class="primary-btn" id="preview-btn" disabled>Pré-visualizar</button>
+          </section>
+
+          <section class="card glass">
+            <h3>Sua playlist</h3>
+            <p class="hint" id="result-hint">Escolha o clima e gere a prévia.</p>
+            <div id="tracklist-wrap"></div>
+            <div class="create-row" id="create-row" hidden>
+              <button class="primary-btn" id="create-btn">Criar no Spotify</button>
+            </div>
+            <div id="result-box"></div>
+          </section>
+        </div>
+      </div>
+
+      <div class="toast" id="toast"></div>
+
+      <div class="gate-backdrop" id="gate">
+        <div class="gate-card glass-strong">
+          <div class="icon">${SPOTIFY_SVG}</div>
+          <h2>Entre com Spotify pra criar</h2>
+          <p>Sua playlist já está pronta na prévia. Falta só autorizar sua conta — é rápido, e você volta direto pra cá.</p>
+          <a class="spotify-pill" href="${loginUrl()}" style="width:100%;justify-content:center">${SPOTIFY_SVG}Continuar com Spotify</a>
+          <button class="fechar" id="gate-fechar">agora não</button>
+        </div>
+      </div>
+
+      <div class="gate-backdrop" id="info">
+        <div class="gate-card glass-strong">
+          <h2>Como funciona</h2>
+          <p style="text-align:left">
+            1. Escolha o clima no disco — até 3 pontos, opostos se apagam sozinhos.<br>
+            2. Ajuste a duração ou a quantidade de faixas, e use uma música como semente se quiser.<br>
+            3. Pré-visualize e crie a playlist direto na sua conta Spotify.
+          </p>
+          <button class="fechar" id="info-fechar">fechar</button>
+        </div>
+      </div>`;
+  }
+
+  function montarOrbita() {
+    const orbit = root.querySelector("#mood-orbit");
+    const raio = 195;
+    orbit.innerHTML = Ctrl.ORDER.map((key, i) => {
+      const { x, y } = posOrbit(i, Ctrl.ORDER.length, raio);
+      return `<button type="button" class="mood-node glass" data-key="${key}" aria-pressed="false" style="--nx:${x}px;--ny:${y}px;transform:translate(${x}px,${y}px)">
+        <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0">${Ctrl.ICONS[key]}</svg>
+        <span class="lb">${Ctrl.LABELS[key]}</span>
+        <span class="ord"></span>
+      </button>`;
+    }).join("");
+    orbit.querySelectorAll(".mood-node").forEach((el, i) => setTimeout(() => el.classList.add("shown"), 60 + i * 55));
+    orbit.querySelectorAll(".mood-node").forEach((el) => {
+      el.addEventListener("click", async () => {
+        const resDrop = root.querySelector("#seed-res"); if (resDrop) resDrop.hidden = true;
+        const r = await Ctrl.toggleMood(el.dataset.key);
+        if (r.recusado && typeof gsap !== "undefined") gsap.fromTo(el, { x: 0 }, { x: 6, duration: 0.08, yoyo: true, repeat: 3, ease: "power1.inOut" });
+      });
+    });
+  }
+
+  function montarStepper() {
+    const s = Ctrl.state;
+    const wrap = root.querySelector("#stepper");
+    const valores = s.modo === "tempo" ? [15, 30, 45, 60, 90] : [5, 10, 15, 20, 25, 30];
+    const atual = s.modo === "tempo" ? s.minutos : s.tamanho;
+    wrap.innerHTML = valores.map((v) => {
+      return `<button type="button" class="pill${v === atual ? " on" : ""}" data-v="${v}">${s.modo === "tempo" ? v + " min" : v}</button>`;
+    }).join("");
+    wrap.querySelectorAll(".pill").forEach((el) => {
+      el.addEventListener("click", () => {
+        root.querySelector("#seed-res").hidden = true; // defensivo: mesmo motivo do fecharBusca() acima
+        if (s.modo === "tempo") Ctrl.setMinutos(Number(el.dataset.v)); else Ctrl.setTamanho(Number(el.dataset.v));
+      });
+    });
+  }
+
+  function render(s) {
+    // órbita
+    root.querySelectorAll(".mood-node").forEach((el) => {
+      const st = Ctrl.statusMood(el.dataset.key);
+      el.classList.toggle("selected", st.selecionado);
+      el.classList.toggle("blocked", st.bloqueado);
+      el.setAttribute("aria-pressed", String(st.selecionado));
+      el.setAttribute("aria-disabled", String(st.bloqueado));
+      el.querySelector(".ord").textContent = st.selecionado ? String(st.posicao + 1) : "";
+    });
+
+    // disco + glows reagem à média dos moods escolhidos
+    const media = Ctrl.valenciaEnergiaMedias();
+    const cor = media ? media.cor : "#A9F44E";
+    root.querySelector("#disc-glow").style.background = `radial-gradient(closest-side, ${cor}, transparent 70%)`;
+    if (discEstado) {
+      recolorirDisco(discEstado, cor, "#0F2013");
+      discEstado.velocidade = (Math.PI * 2) / Math.max(4, 12 - s.selected.length * 2);
+    }
+    root.querySelector("#disc-caption").textContent = s.selected.length
+      ? s.selected.map((k) => Ctrl.LABELS[k]).join(" + ")
+      : "Escolha um clima pra ele reagir";
+
+    // chip da semente
+    const chip = root.querySelector("#seed-chip");
+    chip.hidden = !s.faixaInicial;
+    if (s.faixaInicial && s.faixaInicialInfo) root.querySelector("#seed-chip-t").textContent = `${s.faixaInicialInfo.nome} — ${s.faixaInicialInfo.artista}`;
+
+    // spotify chip + botão de login do header + "Sair" no menu hambúrguer
+    const spotChip = root.querySelector("#spotify-chip");
+    const navLoginBtn = root.querySelector("#nav-login-btn");
+    const hamSair = root.querySelector("#ham-sair");
+    const hamDividerSair = root.querySelector("#ham-divider-sair");
+    if (s.spotify.configurado && s.spotify.logado) {
+      spotChip.hidden = false;
+      spotChip.innerHTML = `<span class="dot">${SPOTIFY_SVG}</span> ${Ctrl.escapeHtml(s.spotify.nome || "conectado")}`;
+      navLoginBtn.hidden = true;
+      hamSair.hidden = false;
+      hamDividerSair.hidden = false;
+    } else {
+      spotChip.hidden = true;
+      navLoginBtn.hidden = false;
+      hamSair.hidden = true;
+      hamDividerSair.hidden = true;
+    }
+
+    // stepper
+    montarStepper();
+    root.querySelectorAll("#modo-switch button").forEach((b) => b.classList.toggle("on", b.dataset.modo === s.modo));
+
+    root.querySelector("#preview-btn").disabled = s.selected.length === 0;
+
+    // tracklist / resultado
+    const wrap = root.querySelector("#tracklist-wrap");
+    const hint = root.querySelector("#result-hint");
+    const createRow = root.querySelector("#create-row");
+    if (!s.preview) {
+      wrap.innerHTML = "";
+      hint.textContent = "Escolha o clima e gere a prévia.";
+      createRow.hidden = true;
+    } else if (s.preview.erro) {
+      wrap.innerHTML = `<div class="result-box erro">${Ctrl.escapeHtml(s.preview.erro)}</div>`;
+      hint.textContent = "";
+      createRow.hidden = true;
+    } else {
+      hint.textContent = `${s.preview.faixas.length} faixas · ${s.preview.duracao_total}`;
+      wrap.innerHTML = `<ul class="tracklist">${s.preview.faixas.map((f, i) => `
+        <li style="animation-delay:${i * 0.03}s" class="${i === 0 ? "is-seed" : ""}">
+          <span class="n num">${String(i + 1).padStart(2, "0")}</span>
+          <span class="info"><span class="t">${Ctrl.escapeHtml(f.track_name)}</span><span class="ar">${Ctrl.escapeHtml(f.artists)}</span></span>
+          <a class="yt-link" href="${Ctrl.linkYoutube(f.track_name, f.artists)}" target="_blank" rel="noopener noreferrer" title="Buscar no YouTube">▶</a>
+          <button type="button" class="star" data-seed="${Ctrl.escapeHtml(f.track_id)}" data-nome="${Ctrl.escapeHtml(f.track_name)}" data-artista="${Ctrl.escapeHtml(f.artists)}">${i === 0 ? "★" : "☆"}</button>
+        </li>`).join("")}</ul>`;
+      wrap.querySelectorAll(".star").forEach((b) => b.addEventListener("click", async () => {
+        const { removidos } = await Ctrl.escolherSemente(b.dataset.seed, b.dataset.nome, b.dataset.artista);
+        avisarRemocao(removidos);
+        Ctrl.gerarPreview();
+      }));
+      createRow.hidden = false;
+    }
+
+    // resultado da criação
+    const resBox = root.querySelector("#result-box");
+    if (!s.resultadoCriacao) resBox.innerHTML = "";
+    else if (s.resultadoCriacao.erro) resBox.innerHTML = `<div class="result-box erro">${Ctrl.escapeHtml(s.resultadoCriacao.erro)}</div>`;
+    else resBox.innerHTML = `<div class="result-box">Playlist criada com ${s.resultadoCriacao.adicionadas} de ${s.resultadoCriacao.total} faixas: <a href="${s.resultadoCriacao.url}" target="_blank" rel="noopener noreferrer">abrir no Spotify</a></div>`;
+
+    const createBtn = root.querySelector("#create-btn");
+    createBtn.disabled = s.criando;
+    createBtn.textContent = s.criando ? "Criando…" : "Criar no Spotify";
+
+    // login concluído enquanto o gate estava aberto -> fecha e cria sozinho
+    if (aguardandoLoginParaCriar && s.spotify.logado) {
+      aguardandoLoginParaCriar = false;
+      fecharGate();
+      Ctrl.criarSpotify(false);
+    }
+  }
+
+  let avisoTimer = null;
+  function mostrarAviso(mensagemHtml) {
+    const el = root.querySelector("#toast");
+    el.innerHTML = mensagemHtml;
+    el.classList.add("on");
+    clearTimeout(avisoTimer);
+    avisoTimer = setTimeout(() => el.classList.remove("on"), 4500);
+  }
+
+  function avisarRemocao(removidos) {
+    if (!removidos || !removidos.length) return;
+    const nomes = removidos.map((k) => `<b>${Ctrl.LABELS[k]}</b>`).join(", ");
+    const verbo = removidos.length > 1 ? "não combinam" : "não combina";
+    mostrarAviso(`${nomes} ${verbo} com a música escolhida como semente e ${removidos.length > 1 ? "foram removidos" : "foi removido"} da seleção.`);
+  }
+
+  function abrirGate() { root.querySelector("#gate").classList.add("on"); }
+  function fecharGate() { root.querySelector("#gate").classList.remove("on"); }
+
+  function renderResultadosBusca(s) {
+    const res = root.querySelector("#seed-res");
+    const input = root.querySelector("#seed-input");
+    if (s.buscando) return;
+    if (!s.resultados.length) {
+      if (input.value.trim().length >= 2) { res.innerHTML = '<div class="res-empty">Nenhuma faixa encontrada.</div>'; res.hidden = false; }
+      else res.hidden = true;
+      return;
+    }
+    res.innerHTML = s.resultados.map((f) => `
+      <div class="res-row" data-id="${Ctrl.escapeHtml(f.track_id)}" data-nome="${Ctrl.escapeHtml(f.track_name)}" data-artista="${Ctrl.escapeHtml(f.artists)}">
+        <span class="info"><span class="t">${Ctrl.escapeHtml(f.track_name)}</span><span class="ar">${Ctrl.escapeHtml(f.artists)}</span></span>
+      </div>`).join("");
+    res.hidden = false;
+    res.querySelectorAll(".res-row").forEach((el) => el.addEventListener("click", () => {
+      // Limpa o campo e fecha o dropdown NA HORA da escolha -- sem isso, o
+      // texto digitado ficava no input, `resultados` esvaziava, e o dropdown
+      // reabria sozinho mostrando "Nenhuma faixa encontrada" bem em cima de
+      // onde o chip da semente aparece, cobrindo o botão de limpar (✕) que o
+      // usuário relatou como não-funcional -- o clique caía no dropdown
+      // fantasma, não no botão.
+      input.value = "";
+      res.hidden = true;
+      Ctrl.escolherSemente(el.dataset.id, el.dataset.nome, el.dataset.artista).then(({ removidos }) => avisarRemocao(removidos));
+    }));
+  }
+
+  function ligar() {
+    const fecharBusca = () => { root.querySelector("#seed-res").hidden = true; };
+    root.querySelector("#preview-btn").addEventListener("click", () => { fecharBusca(); Ctrl.gerarPreview(); });
+    root.querySelectorAll("#modo-switch button").forEach((b) => b.addEventListener("click", () => { fecharBusca(); Ctrl.setModo(b.dataset.modo); }));
+    root.querySelector("#seed-limpar").addEventListener("click", () => Ctrl.limparSemente());
+
+    let deb = null;
+    const input = root.querySelector("#seed-input");
+    input.addEventListener("input", () => {
+      clearTimeout(deb);
+      deb = setTimeout(() => Ctrl.buscarFaixas(input.value), 250);
+    });
+    document.addEventListener("click", (e) => { if (!e.target.closest(".seed-search")) root.querySelector("#seed-res").hidden = true; });
+
+    root.querySelector("#create-btn").addEventListener("click", () => {
+      if (!Ctrl.state.spotify.logado) { aguardandoLoginParaCriar = true; abrirGate(); return; }
+      Ctrl.criarSpotify(false);
+    });
+    root.querySelector("#gate-fechar").addEventListener("click", () => { aguardandoLoginParaCriar = false; fecharGate(); });
+
+    root.querySelector("#ham-btn").addEventListener("click", () => {
+      const menu = root.querySelector("#ham-menu");
+      menu.hidden = !menu.hidden;
+    });
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".nav-right")) {
+        const menu = root.querySelector("#ham-menu");
+        if (menu) menu.hidden = true;
+      }
+    });
+    root.querySelector("#ham-como").addEventListener("click", () => {
+      root.querySelector("#ham-menu").hidden = true;
+      root.querySelector("#info").classList.add("on");
+    });
+    root.querySelector("#info-fechar").addEventListener("click", () => root.querySelector("#info").classList.remove("on"));
+    root.querySelector("#ham-limpar").addEventListener("click", async () => {
+      root.querySelector("#ham-menu").hidden = true;
+      for (const k of Ctrl.state.selected.slice()) await Ctrl.toggleMood(k);
+      Ctrl.limparSemente();
+    });
+  }
+
+  return {
+    montar(r) {
+      root = r;
+      root.innerHTML = template();
+      montarOrbita();
+      discEstado = montarDisco(root.querySelector("#app-disc"), ["#A9F44E", "#1F8A46"]);
+      ligar();
+      Ctrl.onChange((s) => { render(s); renderResultadosBusca(s); });
+      render(Ctrl.state);
+    },
+  };
+})();
+
+Ctrl.iniciar().then(() => {
+  App.montar(document.getElementById("app-root"));
+  // Voltando do /callback real (login concluído ou recusado): busca o
+  // status de verdade e limpa o parâmetro pra um F5 não repetir.
+  const params = new URLSearchParams(location.search);
+  if (params.get("spotify")) {
+    const u = new URL(location); u.searchParams.delete("spotify"); history.replaceState({}, "", u);
+    Ctrl.refreshSpotify();
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>soundpark — protótipo de redesign</title>
+<!--
+  PROTÓTIPO DESCARTÁVEL. Não é o produto (index.html) — arquivo separado de
+  propósito, para não arriscar o que foi testado e endurecido hoje (busca,
+  compatibilidade de mood, cota real, Spotify). Consome as MESMAS rotas reais
+  do Flask (/api/vocabulario, /api/buscar-faixa, /api/moods-compativeis,
+  /api/preview, /api/spotify/status, /login/spotify, /api/criar-spotify,
+  /api/cota) — dado de verdade, não maquete. Servido automaticamente pelo
+  Flask (static_folder cobre a pasta inteira): http://127.0.0.1:5001/prototipo_redesign.html
+
+  Pergunta que este protótipo responde: como deve ser o fluxo de escolher
+  clima → criar playlist, redesenhado com o nível de acabamento de um produto
+  real (glass, animação fluida, disco WebGL), com o login do Spotify como um
+  portal claro no momento de criar — não uma trava de entrada.
+
+  Três variantes, ?variant=A|B|C, trocáveis pela barra flutuante no rodapé:
+    A — Central de Comando: moods em órbita ao redor do disco, painéis de
+        vidro com profundidade/paralaxe. Tudo visível ao mesmo tempo.
+    B — Jornada Guiada: um passo por vez (clima → tamanho → prévia → login →
+        criar), transições de slide. O login é o próximo passo, não uma
+        interrupção.
+    C — Tela Viva: fundo ambiente que reage ao clima escolhido (cor/movimento
+        do disco mudam com energia/valência); controles mínimos flutuam como
+        pílulas de vidro por cima. A mais ousada, e a mais simples em número
+        de elementos na tela.
+
+  Escopo combinado com o usuário antes de construir: só redesenho do fluxo que
+  já existe (clima, tamanho/duração, semente opcional, criar) — sem telas
+  novas. Spotify é o protagonista (login visível); YouTube fica como opção
+  secundária, discreta. Login é um gate NO MOMENTO de criar, não bloqueia a
+  exploração/prévia.
+
+  Limitação honesta: não tenho como capturar screenshot ou julgar a fluidez
+  real das animações a partir daqui — a verificação foi de estrutura, lógica e
+  integração com o backend real (curl + jsdom), não visual. Abra no navegador
+  para julgar a parte que só um navegador mostra.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<style>
+  /* ============================================================
+     TOKENS COMPARTILHADOS — mesma identidade do produto (dark,
+     verde-lima, glow), elevada com camadas de vidro.
+     ============================================================ */
+  :root {
+    --ground: #050705;
+    --ground-2: #0A0F0A;
+    --surface: rgba(255,255,255,0.045);
+    --surface-2: rgba(255,255,255,0.075);
+    --glass-border: rgba(255,255,255,0.10);
+    --glass-border-strong: rgba(255,255,255,0.20);
+    --text: #F4F8F3;
+    --text-dim: #A9BCAB;
+    --text-faint: #64756A;
+    --accent-1: #A9F44E;
+    --accent-2: #4CC96B;
+    --accent-3: #1F8A46;
+    --accent-grad: linear-gradient(120deg, var(--accent-1), var(--accent-3));
+    --spotify: #1DB954;
+    --bad: #E7897C;
+    --blur: 22px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--ground); height: 100%; }
+  body {
+    color: var(--text); font-family: 'Plus Jakarta Sans', -apple-system, 'Segoe UI', sans-serif;
+    line-height: 1.5; overflow-x: hidden; min-height: 100vh; position: relative;
+  }
+  h1, h2, h3 { font-family: 'Baloo 2', 'Plus Jakarta Sans', sans-serif; text-wrap: balance; margin: 0; }
+  .num { font-variant-numeric: tabular-nums; }
+  button { font-family: inherit; cursor: pointer; color: inherit; }
+  ::selection { background: var(--accent-1); color: #06210F; }
+
+  /* Vidro: uma classe utilitária reusada pelas três variantes. */
+  .glass {
+    background: var(--surface);
+    -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
+    backdrop-filter: blur(var(--blur)) saturate(140%);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 24px 60px -24px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .glass-strong {
+    background: var(--surface-2);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    backdrop-filter: blur(28px) saturate(160%);
+    border: 1px solid var(--glass-border-strong);
+    box-shadow: 0 32px 80px -20px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.09);
+  }
+
+  .wordmark { font-family: 'Baloo 2', sans-serif; font-weight: 800; line-height: 1; }
+  .wordmark .sound { color: var(--text); }
+  .wordmark .park { background: var(--accent-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  .spotify-pill {
+    display: inline-flex; align-items: center; gap: 10px; border: none; border-radius: 999px;
+    background: var(--spotify); color: #04170B; font-weight: 800; padding: 14px 24px; font-size: 14.5px;
+    box-shadow: 0 12px 30px -8px rgba(29,185,84,0.55);
+    transition: transform 0.18s cubic-bezier(.2,.8,.2,1), box-shadow 0.18s ease;
+  }
+  .spotify-pill:hover { transform: translateY(-2px) scale(1.015); box-shadow: 0 18px 40px -8px rgba(29,185,84,0.7); }
+  .spotify-pill:active { transform: translateY(0) scale(0.98); }
+  .spotify-pill svg { width: 20px; height: 20px; flex: none; }
+  .spotify-pill:disabled { opacity: 0.5; cursor: wait; transform: none; }
+
+  .btn-ghost {
+    border: 1px solid var(--glass-border-strong); background: transparent; color: var(--text-dim);
+    border-radius: 999px; padding: 10px 18px; font-weight: 700; font-size: 13px;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+  .btn-ghost:hover { border-color: var(--accent-1); color: var(--text); background: rgba(169,244,78,0.06); }
+
+  /* Ambiente: um glow radial suave atrás de tudo, comum às três variantes. */
+  #ambient { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  #ambient canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ambient-glow {
+    position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.35;
+    transition: background 1.1s ease, transform 1.1s cubic-bezier(.2,.8,.2,1);
+  }
+
+  [data-app] { position: relative; z-index: 1; min-height: 100vh; }
+  [data-app][hidden] { display: none !important; }
+
+  /* ============================================================
+     BARRA DE PROTÓTIPO — não faz parte do design avaliado.
+     ============================================================ */
+  #proto-bar {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 999;
+    display: flex; align-items: center; gap: 2px; background: #fff; color: #111; border-radius: 999px;
+    padding: 5px 6px; box-shadow: 0 16px 40px -10px rgba(0,0,0,0.8); font-size: 12.5px; font-weight: 700;
+    max-width: 94vw;
+  }
+  #proto-bar button { border: none; background: transparent; color: #111; font-size: 15px; padding: 6px 10px; border-radius: 999px; }
+  #proto-bar button:hover { background: #EDEDED; }
+  #proto-bar .lab { padding: 0 8px; white-space: nowrap; }
+  #proto-bar .st { padding: 0 10px; border-left: 1px solid #DDD; color: #666; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46vw; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<div id="ambient"><canvas id="ambient-canvas"></canvas></div>
+
+<div data-app="A" hidden></div>
+<div data-app="B" hidden></div>
+<div data-app="C" hidden></div>
+
+<div id="proto-bar">
+  <button id="prev" title="variante anterior (←)">‹</button>
+  <span class="lab" id="proto-lab">A</span>
+  <button id="next" title="próxima variante (→)">›</button>
+  <span class="st" id="proto-state">carregando…</span>
+</div>
+
+<script>
+/* ================================================================
+   CONTROLLER — estado e chamadas reais ao backend, compartilhados
+   pelas três variantes. Cada variante só cuida de como renderizar;
+   nenhuma reimplementa busca/prévia/login/criação por conta própria.
+   ================================================================ */
+const Ctrl = (() => {
+  const state = {
+    vocab: {}, combinacoes: {}, tamanhoMaximo: 30, vocabulario: [],
+    selected: [], modo: "faixas", tamanho: 15, minutos: 30,
+    faixaInicial: null, faixaInicialInfo: null, moodsCompativeisSemente: null,
+    resultados: [], buscando: false,
+    preview: null,        // { faixas, duracao_total, custo_cota, faixa_inicial }
+    ultimaPreviewIds: null,
+    spotify: { configurado: false, logado: false, nome: null },
+    cota: { usadas: 0, restantes: 10000, limite: 10000 },
+    criando: false,
+    resultadoCriacao: null, // { url, adicionadas, total } | { erro }
+  };
+  const ORDER = ["Energetico", "Feliz", "Dancante", "Calmo", "Melancolico", "Intenso", "Instrumental", "Acustico"];
+  const LABELS = {
+    Energetico: "Energético", Feliz: "Feliz", Dancante: "Dançante", Calmo: "Calmo",
+    Melancolico: "Melancólico", Intenso: "Intenso", Instrumental: "Instrumental", Acustico: "Acústico",
+  };
+  const ICONS = {
+    Energetico: '<path d="M13 2 5 13h6l-1 9 9-11h-6l0-9Z"/>',
+    Feliz: '<circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/><g stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></g>',
+    Dancante: '<circle cx="7" cy="17.5" r="2.3" fill="currentColor" stroke="none"/><circle cx="16" cy="15.2" r="2.3" fill="currentColor" stroke="none"/><path d="M9.3 17.5V6.3l9-1.8v10.7" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+    Calmo: '<g stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M2 9c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 15.5c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/></g>',
+    Melancolico: '<path d="M12 3c3.4 4.1 6 7.6 6 10.4a6 6 0 1 1-12 0C6 10.6 8.6 7.1 12 3Z"/>',
+    Intenso: '<path d="M12 22c4 0 7-3 7-7 0-3.6-2.6-5.6-3.8-8.4-.7 1.6-.8 3-2.2 3-1 0-1.7-.9-1.7-2.4C8.6 9 6.5 11.4 6.5 15c0 3.9 3.1 7 5.5 7Z"/>',
+    Instrumental: '<g><rect x="4" y="10.5" width="3.2" height="9" rx="1.2"/><rect x="10.4" y="4.5" width="3.2" height="15" rx="1.2"/><rect x="16.8" y="8" width="3.2" height="11.5" rx="1.2"/></g>',
+    Acustico: '<path d="M4 20C4 10.5 11.7 4.5 20 4c0 8.2-5.9 16-16 16Z"/><path d="M6.3 17.8C10 14 14 10 18.7 5.4" stroke="#0A0F09" stroke-opacity="0.35" stroke-width="1.4" fill="none" stroke-linecap="round"/>',
+  };
+  const V_MIN = 0.127, V_MAX = 0.84, E_MIN = 0.240, E_MAX = 0.941;
+  function corDoMood(energy, valence) {
+    const t = Math.min(1, Math.max(0, (valence - V_MIN) / (V_MAX - V_MIN)));
+    const s = Math.min(1, Math.max(0, (energy - E_MIN) / (E_MAX - E_MIN)));
+    const hue = (300 - 205 * t + 360) % 360;
+    return `oklch(${(34 + 20 * s) / 100} ${(0.11 + 0.08 * s).toFixed(3)} ${hue.toFixed(0)})`;
+  }
+
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  let ouvintes = [];
+  function notificar() { ouvintes.forEach((fn) => fn(state)); }
+  function onChange(fn) { ouvintes.push(fn); }
+
+  function valenciaEnergiaMedias() {
+    if (!state.selected.length) return null;
+    const e = state.selected.reduce((s, k) => s + state.vocab[k].energy, 0) / state.selected.length;
+    const v = state.selected.reduce((s, k) => s + state.vocab[k].valence, 0) / state.selected.length;
+    return { energy: e, valence: v, cor: corDoMood(e, v) };
+  }
+
+  function conflitoCom(key) {
+    if (state.selected.includes(key)) return null;
+    const lista = state.combinacoes[key];
+    if (!lista) return null;
+    return state.selected.find((k) => !lista.includes(k)) || null;
+  }
+  function incompativelComSemente(key) {
+    return state.moodsCompativeisSemente !== null && !state.moodsCompativeisSemente.includes(key);
+  }
+  function statusMood(key) {
+    const pos = state.selected.indexOf(key);
+    const impede = conflitoCom(key);
+    const foraDaSemente = incompativelComSemente(key);
+    const cheio = pos < 0 && !impede && !foraDaSemente && state.selected.length >= 3;
+    return { selecionado: pos >= 0, posicao: pos, bloqueado: Boolean(impede) || foraDaSemente || cheio, impede, foraDaSemente, cheio };
+  }
+
+  async function toggleMood(key) {
+    const st = statusMood(key);
+    if (st.selecionado) {
+      state.selected = state.selected.filter((k) => k !== key);
+    } else if (st.bloqueado) {
+      return { recusado: true, motivo: st.impede ? "oposto" : st.foraDaSemente ? "semente" : "cheio", chave: st.impede };
+    } else {
+      state.selected.push(key);
+    }
+    state.preview = null; state.resultadoCriacao = null;
+    notificar();
+    return { recusado: false };
+  }
+
+  async function iniciar() {
+    const [vocabResp, spotResp, cotaResp] = await Promise.all([
+      fetch("/api/vocabulario").then((r) => r.json()),
+      fetch("/api/spotify/status").then((r) => r.json()).catch(() => ({ configurado: false, logado: false })),
+      fetch("/api/cota").then((r) => r.json()).catch(() => state.cota),
+    ]);
+    state.vocab = {}; ORDER.forEach((k) => { if (vocabResp.moods[k]) state.vocab[k] = vocabResp.moods[k]; });
+    state.vocabulario = ORDER.filter((k) => vocabResp.moods[k]);
+    state.combinacoes = vocabResp.combinacoes || {};
+    state.tamanhoMaximo = vocabResp.tamanho_maximo || 30;
+    state.spotify = spotResp;
+    state.cota = cotaResp;
+    notificar();
+  }
+
+  function setModo(m) { state.modo = m; state.preview = null; state.resultadoCriacao = null; notificar(); }
+  function setTamanho(n) { state.tamanho = n; state.preview = null; notificar(); }
+  function setMinutos(m) { state.minutos = m; state.preview = null; notificar(); }
+
+  let buscaToken = 0;
+  async function buscarFaixas(q) {
+    const meuToken = ++buscaToken;
+    if (q.trim().length < 2) { state.resultados = []; notificar(); return; }
+    state.buscando = true; notificar();
+    try {
+      const data = await fetch("/api/buscar-faixa?q=" + encodeURIComponent(q)).then((r) => r.json());
+      if (meuToken !== buscaToken) return;
+      state.resultados = data.faixas || [];
+    } catch (e) { if (meuToken === buscaToken) state.resultados = []; }
+    finally { if (meuToken === buscaToken) { state.buscando = false; notificar(); } }
+  }
+
+  async function escolherSemente(trackId, nome, artista) {
+    state.faixaInicial = trackId;
+    state.faixaInicialInfo = { nome, artista };
+    state.resultados = [];
+    state.preview = null; state.resultadoCriacao = null;
+    notificar();
+
+    let removidos = [];
+    try {
+      const data = await fetch("/api/moods-compativeis?track_id=" + encodeURIComponent(trackId)).then((r) => r.json());
+      state.moodsCompativeisSemente = data.moods || null;
+    } catch (e) { state.moodsCompativeisSemente = null; }
+    if (state.moodsCompativeisSemente) {
+      removidos = state.selected.filter((k) => !state.moodsCompativeisSemente.includes(k));
+      if (removidos.length) state.selected = state.selected.filter((k) => state.moodsCompativeisSemente.includes(k));
+    }
+    notificar();
+    return { removidos };
+  }
+
+  function limparSemente() {
+    state.faixaInicial = null; state.faixaInicialInfo = null; state.moodsCompativeisSemente = null;
+    notificar();
+  }
+
+  async function gerarPreview() {
+    if (!state.selected.length) return;
+    const corpo = { palavras: state.selected, modo: state.modo, n: state.tamanho, minutos: state.minutos, faixa_inicial: state.faixaInicial };
+    try {
+      const resp = await fetch("/api/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
+      const data = await resp.json();
+      if (!resp.ok) { state.preview = { erro: data.erro || "Erro desconhecido" }; notificar(); return state.preview; }
+      state.preview = data;
+      state.ultimaPreviewIds = data.faixas.map((f) => f.track_id);
+      state.resultadoCriacao = null;
+      notificar();
+      return data;
+    } catch (e) {
+      state.preview = { erro: "Não consegui falar com o servidor." };
+      notificar();
+      return state.preview;
+    }
+  }
+
+  async function refreshCota() {
+    try { state.cota = await fetch("/api/cota").then((r) => r.json()); notificar(); } catch (e) {}
+  }
+  async function refreshSpotify() {
+    try { state.spotify = await fetch("/api/spotify/status").then((r) => r.json()); notificar(); } catch (e) {}
+  }
+
+  async function criarSpotify(publica) {
+    if (!state.ultimaPreviewIds) return;
+    state.criando = true; state.resultadoCriacao = null; notificar();
+    try {
+      const resp = await fetch("/api/criar-spotify", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ palavras: state.selected, track_ids: state.ultimaPreviewIds, publica: Boolean(publica) }),
+      });
+      const data = await resp.json();
+      state.resultadoCriacao = resp.ok ? data : { erro: data.erro || "Erro desconhecido" };
+    } catch (e) {
+      state.resultadoCriacao = { erro: "Não consegui falar com o servidor." };
+    } finally {
+      state.criando = false; notificar();
+    }
+  }
+
+  return {
+    state, ORDER, LABELS, ICONS, escapeHtml, corDoMood, valenciaEnergiaMedias,
+    conflitoCom, incompativelComSemente, statusMood, toggleMood,
+    iniciar, setModo, setTamanho, setMinutos, buscarFaixas, escolherSemente, limparSemente,
+    gerarPreview, criarSpotify, refreshCota, refreshSpotify, onChange,
+  };
+})();
+</script>
+
+<script>
+const Variantes = {}; // cada bloco de variante se registra aqui: Variantes.X = { montar(root) {...} }
+
+function loginSpotifyUrl() {
+  const proprio = location.pathname + "?variant=" + (new URLSearchParams(location.search).get("variant") || "A").toUpperCase();
+  return "/login/spotify?next=" + encodeURIComponent(proprio);
+}
+</script>
+
+<script>
+/* ================================================================
+   AMBIENTE — glow radial de fundo (three.js, leve), comum às três
+   variantes. A variante C intensifica isso com o disco vivo; aqui é
+   só o glow base para não ficarem sem nada por trás enquanto ela não
+   está ativa.
+   ================================================================ */
+(function ambiente() {
+  const host = document.getElementById("ambient");
+  const g1 = document.createElement("div"); g1.className = "ambient-glow";
+  g1.style.cssText = "width:60vw;height:60vw;left:-10vw;top:-20vw;background:radial-gradient(closest-side,rgba(169,244,78,0.5),transparent 70%)";
+  const g2 = document.createElement("div"); g2.className = "ambient-glow";
+  g2.style.cssText = "width:50vw;height:50vw;right:-15vw;bottom:-15vw;background:radial-gradient(closest-side,rgba(76,201,107,0.35),transparent 70%)";
+  host.appendChild(g1); host.appendChild(g2);
+  if (typeof gsap !== "undefined") {
+    gsap.to(g1, { x: 60, y: 30, duration: 18, repeat: -1, yoyo: true, ease: "sine.inOut" });
+    gsap.to(g2, { x: -40, y: -50, duration: 22, repeat: -1, yoyo: true, ease: "sine.inOut" });
+  }
+})();
+</script>
+
+<script>
+/* ================================================================
+   DISCO — versão reutilizável do vinil WebGL do produto (index.html),
+   simplificada (sem braço/agulha) e com a cor do label parametrizável,
+   para a variante C poder reagir ao clima escolhido. Compartilhada
+   entre as variantes A e C.
+   ================================================================ */
+function montarDisco(container, corLabel) {
+  const estado = { spinGroup: null, labelMat: null, velocidade: (Math.PI * 2) / 9 };
+  try {
+    if (!container || typeof THREE === "undefined") return estado;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    if (!renderer || !renderer.getContext()) return estado;
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 50);
+    camera.position.set(0, 3.3, 4.6);
+    camera.lookAt(0, 0.05, 0);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+    const keyLight = new THREE.DirectionalLight(0xfff3e0, 1.9); keyLight.position.set(2.3, 3.8, 2.4); scene.add(keyLight);
+    const rimLight = new THREE.DirectionalLight(0x9dff6a, 2.4); rimLight.position.set(-2.8, 1.6, -2.2); scene.add(rimLight);
+    const fillLight = new THREE.PointLight(0x4cc96b, 1.1, 12); fillLight.position.set(0, -1.4, 2.4); scene.add(fillLight);
+
+    function grooveCanvas(size) {
+      const c = document.createElement("canvas"); c.width = c.height = size;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#1a1e1c"; ctx.fillRect(0, 0, size, size);
+      const cx = size / 2, cy = size / 2, maxR = size / 2;
+      for (let r = maxR; r > maxR * 0.2; r -= 1.4) {
+        const tone = 26 + Math.round(Math.random() * 14);
+        ctx.strokeStyle = `rgba(${tone + 14},${tone + 18},${tone + 14},0.6)`;
+        ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.strokeStyle = "rgba(140,240,106,0.55)"; ctx.lineWidth = size * 0.012;
+      ctx.beginPath(); ctx.arc(cx, cy, maxR - ctx.lineWidth, 0, Math.PI * 2); ctx.stroke();
+      return c;
+    }
+    const grooveTexture = new THREE.CanvasTexture(grooveCanvas(512));
+    grooveTexture.colorSpace = THREE.SRGBColorSpace;
+
+    function labelCanvas(size, corA, corB) {
+      const c = document.createElement("canvas"); c.width = c.height = size;
+      const ctx = c.getContext("2d");
+      const cx = size / 2, cy = size / 2, r = size / 2;
+      const grad = ctx.createLinearGradient(0, 0, size, size);
+      grad.addColorStop(0, corA); grad.addColorStop(1, corB);
+      ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = size * 0.01;
+      ctx.beginPath(); ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "#08090a"; ctx.beginPath(); ctx.arc(cx, cy, r * 0.07, 0, Math.PI * 2); ctx.fill();
+      return c;
+    }
+    const [corA, corB] = corLabel || ["#A9F44E", "#1F8A46"];
+    const labelTexture = new THREE.CanvasTexture(labelCanvas(256, corA, corB));
+    labelTexture.colorSpace = THREE.SRGBColorSpace;
+
+    const DISC_RADIUS = 1.5, DISC_HEIGHT = 0.05;
+    const vinylMat = new THREE.MeshStandardMaterial({ color: 0x1c211f, roughness: 0.5, metalness: 0.12 });
+    const grooveMat = new THREE.MeshStandardMaterial({ map: grooveTexture, color: 0xffffff, roughness: 0.42, metalness: 0.12 });
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(DISC_RADIUS, DISC_RADIUS, DISC_HEIGHT, 96, 1), [vinylMat, grooveMat, grooveMat]);
+    const spinGroup = new THREE.Group(); spinGroup.add(disc);
+    const labelMat = new THREE.MeshStandardMaterial({ map: labelTexture, roughness: 0.5, metalness: 0.05 });
+    const label = new THREE.Mesh(new THREE.CylinderGeometry(DISC_RADIUS * 0.33, DISC_RADIUS * 0.33, DISC_HEIGHT * 0.4, 48, 1), labelMat);
+    label.position.y = DISC_HEIGHT / 2 + DISC_HEIGHT * 0.2;
+    spinGroup.add(label);
+    scene.add(spinGroup);
+    estado.spinGroup = spinGroup; estado.labelMat = labelMat; estado.labelTexture = labelTexture; estado.labelCanvas = labelCanvas;
+
+    function resize() {
+      const w = container.clientWidth || 320, h = container.clientHeight || 320;
+      if (!w || !h) return;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h; camera.updateProjectionMatrix();
+    }
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(resize).observe(container);
+    window.addEventListener("resize", resize);
+    resize();
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      spinGroup.rotation.y += clock.getDelta() * estado.velocidade;
+      renderer.render(scene, camera);
+    }
+    animate();
+  } catch (e) { /* peça decorativa: falha ignorada */ }
+  return estado;
+}
+
+/* Recolore o label do disco em runtime (variante C: reage ao clima). */
+function recolorirDisco(estado, corA, corB) {
+  if (!estado || !estado.labelMat) return;
+  const nova = new THREE.CanvasTexture(estado.labelCanvas(256, corA, corB));
+  nova.colorSpace = THREE.SRGBColorSpace;
+  estado.labelMat.map = nova;
+  estado.labelMat.needsUpdate = true;
+}
+</script>
+
+<style>
+  /* ============================================================
+     VARIANTE A — Central de Comando
+     ============================================================ */
+  .a-shell { max-width: 1180px; margin: 0 auto; padding: 28px 24px 120px; }
+  .a-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+  .a-top .wordmark { font-size: 19px; }
+  .a-spotify-chip { display: flex; align-items: center; gap: 8px; padding: 7px 14px 7px 7px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--text-dim); }
+  .a-spotify-chip[hidden] { display: none; }
+  .a-spotify-chip .dot { width: 26px; height: 26px; border-radius: 50%; background: var(--spotify); display: grid; place-items: center; color: #04170B; }
+  .a-spotify-chip .dot svg { width: 14px; height: 14px; }
+
+  .a-top-right { display: flex; align-items: center; gap: 10px; position: relative; }
+  .a-ham-btn {
+    width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--glass-border-strong); background: transparent;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; flex: none;
+  }
+  .a-ham-btn span { width: 15px; height: 2px; background: var(--text-dim); border-radius: 2px; transition: background 0.2s ease; }
+  .a-ham-btn:hover span { background: var(--text); }
+  .a-ham-menu {
+    position: absolute; top: 44px; right: 0; min-width: 210px; border-radius: 16px; padding: 8px;
+    display: flex; flex-direction: column; gap: 2px; z-index: 80; box-shadow: 0 20px 50px -12px rgba(0,0,0,0.9);
+  }
+  .a-ham-menu[hidden] { display: none; }
+  .a-ham-item { background: none; border: none; text-align: left; padding: 10px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
+  .a-ham-item:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+  .a-ham-divider { height: 1px; background: var(--glass-border); margin: 6px 4px; }
+
+  .a-stage { position: relative; display: grid; place-items: center; height: 460px; margin: 10px auto 8px; max-width: 620px; }
+  .a-disc-ring {
+    position: absolute; width: 300px; height: 300px; border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--glass-border), 0 0 90px -10px rgba(169,244,78,0.35);
+  }
+  .a-disc { position: absolute; width: 300px; height: 300px; }
+  .a-orbit { position: absolute; inset: 0; }
+  .a-node {
+    position: absolute; top: 50%; left: 50%; width: 68px; height: 68px; margin: -34px 0 0 -34px;
+    border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    color: var(--text-dim); transition: transform 0.35s cubic-bezier(.2,.8,.2,1), background 0.25s ease, border-color 0.25s ease, opacity 0.25s ease, color 0.25s ease;
+  }
+  .a-node svg { width: 19px; height: 19px; }
+  .a-node .lb { font-size: 9.5px; font-weight: 700; letter-spacing: 0.01em; }
+  .a-node.shown { opacity: 1; }
+  .a-node:not(.shown) { opacity: 0; }
+  .a-node:hover:not(.blocked) { border-color: var(--accent-1); color: var(--text); transform: translate(var(--nx), var(--ny)) scale(1.08); }
+  .a-node.selected { background: var(--accent-grad); border-color: transparent; color: #06210F; box-shadow: 0 10px 26px -8px rgba(169,244,78,0.6); }
+  .a-node.selected .lb { color: #06210F; }
+  .a-node.blocked { opacity: 0.28; filter: saturate(0.2); cursor: not-allowed; }
+  .a-node .ord {
+    position: absolute; top: -3px; right: -1px; width: 17px; height: 17px; border-radius: 50%; background: var(--accent-1);
+    color: #06210F; font-size: 9.5px; font-weight: 800; display: grid; place-items: center; opacity: 0; transform: scale(0.5);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .a-node.selected .ord { opacity: 1; transform: scale(1); }
+
+  .a-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 860px) { .a-panels { grid-template-columns: 1fr; } .a-stage { height: 380px; } .a-disc, .a-disc-ring { width: 230px; height: 230px; } .a-node { transform: translate(calc(var(--nx) * 0.72), calc(var(--ny) * 0.72)) !important; } }
+  .a-card { border-radius: 24px; padding: 22px; }
+  .a-card h3 { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
+  .a-card .hint { font-size: 12px; color: var(--text-faint); margin: 0 0 14px; }
+
+  .a-search { position: relative; margin-bottom: 12px; }
+  .a-search input {
+    width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 12px;
+    color: var(--text); font-family: inherit; font-size: 13px; padding: 11px 13px; outline: none;
+  }
+  .a-search input:focus { border-color: var(--accent-1); }
+  .a-search .res {
+    position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 6px); max-height: 260px; overflow-y: auto;
+    border-radius: 14px; padding: 6px;
+  }
+  .a-res-row { display: flex; align-items: center; gap: 8px; padding: 8px 9px; border-radius: 9px; cursor: pointer; }
+  .a-res-row:hover { background: rgba(255,255,255,0.06); }
+  .a-res-row .info { min-width: 0; flex: 1; }
+  .a-res-row .t { font-size: 12.5px; font-weight: 700; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .a-res-row .ar { font-size: 11px; color: var(--text-dim); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .a-seed-chip { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; margin-bottom: 14px; border: 1px solid var(--accent-1); background: rgba(169,244,78,0.06); }
+  .a-seed-chip .t { font-size: 12.5px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .a-seed-chip button { background: none; border: none; color: var(--text-faint); font-size: 14px; }
+
+  .a-modo { display: flex; gap: 4px; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 3px; margin-bottom: 12px; }
+  .a-modo button { flex: 1; padding: 8px; border: none; background: transparent; border-radius: 9px; color: var(--text-dim); font-weight: 700; font-size: 12px; }
+  .a-modo button.on { background: var(--accent-grad); color: #06210F; }
+  .a-stepper { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .a-pill { flex: 1 1 auto; text-align: center; padding: 9px 4px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-dim); font-weight: 700; font-size: 13px; }
+  .a-pill.on { background: var(--accent-grad); color: #06210F; border-color: transparent; }
+
+  .a-primary {
+    width: 100%; padding: 15px; border-radius: 14px; border: none; background: var(--accent-grad); color: #06210F;
+    font-weight: 800; font-size: 14px; transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .a-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 28px -10px rgba(169,244,78,0.5); }
+  .a-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .a-tracklist { list-style: none; margin: 14px 0 0; padding: 0; max-height: 320px; overflow-y: auto; }
+  .a-tracklist li { display: flex; align-items: center; gap: 10px; padding: 9px 6px; border-radius: 10px; opacity: 0; transform: translateY(6px); animation: a-in 0.4s cubic-bezier(.2,.8,.2,1) forwards; }
+  @keyframes a-in { to { opacity: 1; transform: none; } }
+  .a-tracklist .n { width: 20px; font-size: 11px; color: var(--text-faint); }
+  .a-tracklist .info { flex: 1; min-width: 0; }
+  .a-tracklist .t { font-size: 12.5px; font-weight: 700; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .a-tracklist .ar { font-size: 11px; color: var(--text-dim); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .a-tracklist .star { background: none; border: 1px solid var(--glass-border-strong); border-radius: 50%; width: 22px; height: 22px; font-size: 10px; color: var(--text-faint); flex: none; }
+  .a-tracklist li.is-seed .star { background: var(--accent-1); color: #06210F; border-color: transparent; }
+
+  .a-create-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+  .a-cota { font-size: 11px; color: var(--text-faint); }
+  .a-cota b { color: var(--text-dim); }
+
+  .a-result-box { margin-top: 14px; padding: 13px 15px; border-radius: 14px; border: 1px solid var(--accent-3); background: rgba(76,201,107,0.08); font-size: 13px; }
+  .a-result-box.erro { border-color: var(--bad); background: rgba(231,137,124,0.08); color: var(--bad); }
+  .a-result-box a { color: var(--accent-1); font-weight: 700; word-break: break-all; }
+
+  /* Gate de login: modal de vidro sobre backdrop desfocado. */
+  .a-gate-backdrop {
+    position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 24px;
+    background: rgba(2,4,2,0.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    opacity: 0; pointer-events: none; transition: opacity 0.28s ease;
+  }
+  .a-gate-backdrop.on { opacity: 1; pointer-events: auto; }
+  .a-gate-card { width: min(420px, 100%); border-radius: 26px; padding: 34px 30px; text-align: center; transform: scale(0.92) translateY(10px); transition: transform 0.32s cubic-bezier(.2,.8,.2,1); }
+  .a-gate-backdrop.on .a-gate-card { transform: scale(1) translateY(0); }
+  .a-gate-card .icon { width: 56px; height: 56px; border-radius: 50%; background: var(--spotify); display: grid; place-items: center; margin: 0 auto 18px; }
+  .a-gate-card .icon svg { width: 28px; height: 28px; }
+  .a-gate-card h2 { font-size: 20px; margin-bottom: 8px; }
+  .a-gate-card p { font-size: 13px; color: var(--text-dim); margin: 0 0 22px; }
+  .a-gate-card .fechar { display: block; margin: 14px auto 0; background: none; border: none; color: var(--text-faint); font-size: 12.5px; }
+</style>
+<script>
+Variantes.A = (() => {
+  const SPOTIFY_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2Zm4.6 14.4a.75.75 0 0 1-1 .25c-2.8-1.7-6.3-2.1-10.4-1.1a.75.75 0 1 1-.35-1.46c4.5-1.05 8.4-.6 11.5 1.3.36.22.47.68.25 1.01Zm1.2-2.8a.9.9 0 0 1-1.24.3c-3.2-2-8.1-2.55-11.9-1.4a.9.9 0 1 1-.52-1.72c4.3-1.3 9.7-.7 13.4 1.6.42.26.55.8.26 1.22Zm.1-2.9C14.5 8.4 8.9 8.2 5.6 9.2a1.08 1.08 0 1 1-.63-2.07c3.8-1.15 10-.9 13.9 1.4a1.08 1.08 0 1 1-1.1 1.86Z"/></svg>';
+  let root;
+
+  function posOrbit(i, n, raio) {
+    const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
+    return { x: Math.cos(ang) * raio, y: Math.sin(ang) * raio };
+  }
+
+  function template() {
+    return `
+      <div class="a-shell">
+        <div class="a-top">
+          <span class="wordmark"><span class="sound">sound</span><span class="park">park</span></span>
+          <div class="a-top-right">
+            <span class="a-spotify-chip glass" id="a-spotify-chip" hidden></span>
+            <button type="button" class="a-ham-btn" id="a-ham-btn" aria-label="Abrir menu">
+              <span></span><span></span><span></span>
+            </button>
+            <div class="a-ham-menu glass-strong" id="a-ham-menu" hidden>
+              <button type="button" class="a-ham-item" id="a-ham-como">Como funciona</button>
+              <button type="button" class="a-ham-item" id="a-ham-limpar">Limpar clima e semente</button>
+              <div class="a-ham-divider"></div>
+              <button type="button" class="a-ham-item" id="a-ham-variante">Trocar variante</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="a-stage">
+          <div class="a-disc-ring glass-strong" style="border-radius:50%"></div>
+          <div class="a-disc" id="a-disc"></div>
+          <div class="a-orbit" id="a-orbit"></div>
+        </div>
+
+        <div class="a-panels">
+          <section class="a-card glass">
+            <h3>Escolha o clima</h3>
+            <p class="hint">Toque em até 3 pontos ao redor do disco. Opostos se apagam sozinhos.</p>
+            <div class="a-search">
+              <input type="text" id="a-seed-input" placeholder="Começar por uma música específica? (opcional)" autocomplete="off">
+              <div class="a-res glass-strong" id="a-seed-res" hidden></div>
+            </div>
+            <div class="a-seed-chip glass" id="a-seed-chip" hidden>
+              <span style="color:var(--accent-1)">★</span>
+              <span class="t" id="a-seed-chip-t"></span>
+              <button id="a-seed-limpar">✕</button>
+            </div>
+            <div class="a-modo" id="a-modo">
+              <button data-modo="faixas" class="on">Por faixas</button>
+              <button data-modo="tempo">Por duração</button>
+            </div>
+            <div class="a-stepper" id="a-stepper"></div>
+            <button class="a-primary" id="a-preview-btn" disabled>Pré-visualizar</button>
+          </section>
+
+          <section class="a-card glass">
+            <h3>Sua playlist</h3>
+            <p class="hint" id="a-result-hint">Escolha o clima e gere a prévia.</p>
+            <div id="a-tracklist-wrap"></div>
+            <div class="a-create-row" id="a-create-row" hidden>
+              <button class="a-primary" id="a-create-btn" style="width:auto;flex:1">Criar no Spotify</button>
+              <span class="a-cota">cota hoje: <b id="a-cota-valor">—</b></span>
+            </div>
+            <div id="a-result-box"></div>
+          </section>
+        </div>
+      </div>
+
+      <div class="a-gate-backdrop" id="a-gate">
+        <div class="a-gate-card glass-strong">
+          <div class="icon">${SPOTIFY_SVG}</div>
+          <h2>Entre com Spotify pra criar</h2>
+          <p>Sua playlist já está pronta na prévia. Falta só autorizar sua conta — é rápido, e você volta direto pra cá.</p>
+          <a class="spotify-pill" href="${loginSpotifyUrl()}" style="width:100%;justify-content:center">${SPOTIFY_SVG}Continuar com Spotify</a>
+          <button class="fechar" id="a-gate-fechar">agora não</button>
+        </div>
+      </div>
+
+      <div class="a-gate-backdrop" id="a-info">
+        <div class="a-gate-card glass-strong">
+          <h2>Como funciona</h2>
+          <p style="text-align:left">
+            1. Escolha o clima no disco — até 3 pontos, opostos se apagam sozinhos.<br>
+            2. Ajuste a duração ou a quantidade de faixas, e use uma música como semente se quiser.<br>
+            3. Pré-visualize e crie a playlist direto na sua conta Spotify.
+          </p>
+          <button class="fechar" id="a-info-fechar">fechar</button>
+        </div>
+      </div>`;
+  }
+
+  function montarOrbita() {
+    const orbit = root.querySelector("#a-orbit");
+    const raio = 168;
+    orbit.innerHTML = Ctrl.ORDER.map((key, i) => {
+      const { x, y } = posOrbit(i, Ctrl.ORDER.length, raio);
+      return `<button type="button" class="a-node" data-key="${key}" style="--nx:${x}px;--ny:${y}px;transform:translate(${x}px,${y}px)">
+        <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0">${Ctrl.ICONS[key]}</svg>
+        <span class="lb">${Ctrl.LABELS[key]}</span>
+        <span class="ord"></span>
+      </button>`;
+    }).join("");
+    orbit.querySelectorAll(".a-node").forEach((el, i) => setTimeout(() => el.classList.add("shown"), 60 + i * 55));
+    orbit.querySelectorAll(".a-node").forEach((el) => {
+      el.addEventListener("click", async () => {
+        const r = await Ctrl.toggleMood(el.dataset.key);
+        if (r.recusado && typeof gsap !== "undefined") gsap.fromTo(el, { x: 0 }, { x: 6, duration: 0.08, yoyo: true, repeat: 3, ease: "power1.inOut" });
+      });
+    });
+  }
+
+  function montarStepper() {
+    const s = Ctrl.state;
+    const wrap = root.querySelector("#a-stepper");
+    const valores = s.modo === "tempo" ? [15, 30, 45, 60, 90] : [5, 10, 15, 20, 25, 30];
+    wrap.innerHTML = valores.map((v) => {
+      const atual = s.modo === "tempo" ? s.minutos : s.tamanho;
+      return `<button type="button" class="a-pill${v === atual ? " on" : ""}" data-v="${v}">${s.modo === "tempo" ? v + " min" : v}</button>`;
+    }).join("");
+    wrap.querySelectorAll(".a-pill").forEach((el) => {
+      el.addEventListener("click", () => s.modo === "tempo" ? Ctrl.setMinutos(Number(el.dataset.v)) : Ctrl.setTamanho(Number(el.dataset.v)));
+    });
+  }
+
+  let aguardandoLoginParaCriar = false;
+  function render(s) {
+    // login concluído enquanto o gate estava aberto -> fecha e cria sozinho
+    if (aguardandoLoginParaCriar && s.spotify.logado) {
+      aguardandoLoginParaCriar = false;
+      fecharGate();
+      Ctrl.criarSpotify(false);
+    }
+    // órbita: estado visual de cada nó
+    root.querySelectorAll(".a-node").forEach((el) => {
+      const st = Ctrl.statusMood(el.dataset.key);
+      el.classList.toggle("selected", st.selecionado);
+      el.classList.toggle("blocked", st.bloqueado);
+      el.querySelector(".ord").textContent = st.selecionado ? String(st.posicao + 1) : "";
+    });
+
+    // disco: cor do label reage à média dos moods escolhidos (ecoa a variante C, discreto aqui)
+    const media = Ctrl.valenciaEnergiaMedias();
+
+    // chip da semente
+    const chip = root.querySelector("#a-seed-chip");
+    chip.hidden = !s.faixaInicial;
+    if (s.faixaInicial && s.faixaInicialInfo) root.querySelector("#a-seed-chip-t").textContent = `${s.faixaInicialInfo.nome} — ${s.faixaInicialInfo.artista}`;
+
+    // spotify chip
+    const spotChip = root.querySelector("#a-spotify-chip");
+    if (s.spotify.configurado && s.spotify.logado) {
+      spotChip.hidden = false;
+      spotChip.innerHTML = `<span class="dot">${SPOTIFY_SVG}</span> ${Ctrl.escapeHtml(s.spotify.nome || "conectado")}`;
+    } else { spotChip.hidden = true; }
+
+    // stepper (rebuild se o modo mudou de fora)
+    montarStepper();
+    root.querySelectorAll("#a-modo button").forEach((b) => b.classList.toggle("on", b.dataset.modo === s.modo));
+
+    // botão de prévia
+    root.querySelector("#a-preview-btn").disabled = s.selected.length === 0;
+
+    // tracklist / resultado
+    const wrap = root.querySelector("#a-tracklist-wrap");
+    const hint = root.querySelector("#a-result-hint");
+    const createRow = root.querySelector("#a-create-row");
+    if (!s.preview) {
+      wrap.innerHTML = "";
+      hint.textContent = "Escolha o clima e gere a prévia.";
+      createRow.hidden = true;
+    } else if (s.preview.erro) {
+      wrap.innerHTML = `<div class="a-result-box erro">${Ctrl.escapeHtml(s.preview.erro)}</div>`;
+      hint.textContent = "";
+      createRow.hidden = true;
+    } else {
+      hint.textContent = `${s.preview.faixas.length} faixas · ${s.preview.duracao_total}`;
+      wrap.innerHTML = `<ul class="a-tracklist">${s.preview.faixas.map((f, i) => `
+        <li style="animation-delay:${i * 0.03}s" class="${i === 0 ? "is-seed" : ""}">
+          <span class="n num">${String(i + 1).padStart(2, "0")}</span>
+          <span class="info"><span class="t">${Ctrl.escapeHtml(f.track_name)}</span><span class="ar">${Ctrl.escapeHtml(f.artists)}</span></span>
+          <button type="button" class="star" data-seed="${Ctrl.escapeHtml(f.track_id)}" data-nome="${Ctrl.escapeHtml(f.track_name)}" data-artista="${Ctrl.escapeHtml(f.artists)}">${i === 0 ? "★" : "☆"}</button>
+        </li>`).join("")}</ul>`;
+      wrap.querySelectorAll(".star").forEach((b) => b.addEventListener("click", async () => {
+        await Ctrl.escolherSemente(b.dataset.seed, b.dataset.nome, b.dataset.artista);
+        Ctrl.gerarPreview();
+      }));
+      createRow.hidden = false;
+      root.querySelector("#a-cota-valor").textContent = `${s.cota.restantes.toLocaleString("pt-BR")} / ${s.cota.limite.toLocaleString("pt-BR")}`;
+    }
+
+    // resultado da criação
+    const resBox = root.querySelector("#a-result-box");
+    if (!s.resultadoCriacao) resBox.innerHTML = "";
+    else if (s.resultadoCriacao.erro) resBox.innerHTML = `<div class="a-result-box erro">${Ctrl.escapeHtml(s.resultadoCriacao.erro)}</div>`;
+    else resBox.innerHTML = `<div class="a-result-box">Playlist criada com ${s.resultadoCriacao.adicionadas} de ${s.resultadoCriacao.total} faixas: <a href="${s.resultadoCriacao.url}" target="_blank" rel="noopener noreferrer">abrir no Spotify</a></div>`;
+
+    const createBtn = root.querySelector("#a-create-btn");
+    createBtn.disabled = s.criando;
+    createBtn.textContent = s.criando ? "Criando…" : "Criar no Spotify";
+  }
+
+  function ligar() {
+    root.querySelector("#a-preview-btn").addEventListener("click", () => Ctrl.gerarPreview());
+    root.querySelectorAll("#a-modo button").forEach((b) => b.addEventListener("click", () => Ctrl.setModo(b.dataset.modo)));
+    root.querySelector("#a-seed-limpar").addEventListener("click", () => Ctrl.limparSemente());
+
+    let deb = null;
+    const input = root.querySelector("#a-seed-input");
+    input.addEventListener("input", () => {
+      clearTimeout(deb);
+      deb = setTimeout(() => Ctrl.buscarFaixas(input.value), 250);
+    });
+    document.addEventListener("click", (e) => { if (!e.target.closest(".a-search")) root.querySelector("#a-seed-res").hidden = true; });
+
+    root.querySelector("#a-create-btn").addEventListener("click", () => {
+      if (!Ctrl.state.spotify.logado) { aguardandoLoginParaCriar = true; abrirGate(); return; }
+      Ctrl.criarSpotify(false);
+    });
+    root.querySelector("#a-gate-fechar").addEventListener("click", fecharGate);
+
+    root.querySelector("#a-ham-btn").addEventListener("click", () => {
+      const menu = root.querySelector("#a-ham-menu");
+      menu.hidden = !menu.hidden;
+    });
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".a-top-right")) {
+        const menu = root.querySelector("#a-ham-menu");
+        if (menu) menu.hidden = true;
+      }
+    });
+    root.querySelector("#a-ham-como").addEventListener("click", () => {
+      root.querySelector("#a-ham-menu").hidden = true;
+      root.querySelector("#a-info").classList.add("on");
+    });
+    root.querySelector("#a-info-fechar").addEventListener("click", () => root.querySelector("#a-info").classList.remove("on"));
+    root.querySelector("#a-ham-limpar").addEventListener("click", async () => {
+      root.querySelector("#a-ham-menu").hidden = true;
+      for (const k of Ctrl.state.selected.slice()) await Ctrl.toggleMood(k);
+      Ctrl.limparSemente();
+    });
+    root.querySelector("#a-ham-variante").addEventListener("click", () => {
+      root.querySelector("#a-ham-menu").hidden = true;
+      const next = document.getElementById("next");
+      if (next) next.click();
+    });
+  }
+
+  function abrirGate() { root.querySelector("#a-gate").classList.add("on"); }
+  function fecharGate() { root.querySelector("#a-gate").classList.remove("on"); }
+
+  function renderResultadosBusca(s) {
+    const res = root.querySelector("#a-seed-res");
+    if (s.buscando) return;
+    if (!s.resultados.length) { res.hidden = document.activeElement !== root.querySelector("#a-seed-input") ? true : res.hidden; if (root.querySelector("#a-seed-input").value.trim().length >= 2) { res.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--text-faint);text-align:center">Nenhuma faixa encontrada.</div>'; res.hidden = false; } return; }
+    res.innerHTML = s.resultados.map((f) => `
+      <div class="a-res-row" data-id="${Ctrl.escapeHtml(f.track_id)}" data-nome="${Ctrl.escapeHtml(f.track_name)}" data-artista="${Ctrl.escapeHtml(f.artists)}">
+        <span class="info"><span class="t">${Ctrl.escapeHtml(f.track_name)}</span><span class="ar">${Ctrl.escapeHtml(f.artists)}</span></span>
+      </div>`).join("");
+    res.hidden = false;
+    res.querySelectorAll(".a-res-row").forEach((el) => el.addEventListener("click", () => Ctrl.escolherSemente(el.dataset.id, el.dataset.nome, el.dataset.artista)));
+  }
+
+  return {
+    montar(r) {
+      root = r;
+      root.innerHTML = template();
+      montarOrbita();
+      montarDisco(root.querySelector("#a-disc"), ["#A9F44E", "#1F8A46"]);
+      ligar();
+      Ctrl.onChange((s) => { render(s); renderResultadosBusca(s); });
+      render(Ctrl.state);
+    },
+  };
+})();
+</script>
+
+<style>
+  /* ============================================================
+     VARIANTE B — Jornada Guiada
+     ============================================================ */
+  .b-shell { max-width: 640px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; padding: 26px 22px 100px; }
+  .b-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 26px; }
+  .b-dots { display: flex; gap: 7px; }
+  .b-dots i { width: 26px; height: 4px; border-radius: 4px; background: rgba(255,255,255,0.12); display: block; transition: background 0.3s ease, width 0.3s ease; }
+  .b-dots i.done { background: var(--accent-3); }
+  .b-dots i.now { background: var(--accent-1); width: 38px; }
+
+  .b-track { flex: 1; position: relative; overflow: hidden; }
+  .b-tela {
+    position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center;
+    opacity: 0; transform: translateX(40px); pointer-events: none; transition: opacity 0.45s cubic-bezier(.2,.8,.2,1), transform 0.45s cubic-bezier(.2,.8,.2,1);
+  }
+  .b-tela.on { opacity: 1; transform: translateX(0); pointer-events: auto; }
+  .b-tela.saindo { transform: translateX(-40px); }
+  .b-kicker { font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-1); font-weight: 800; margin-bottom: 10px; text-align: center; }
+  .b-tela h1 { font-size: clamp(24px, 5vw, 32px); text-align: center; margin-bottom: 8px; }
+  .b-tela p.sub { text-align: center; color: var(--text-dim); font-size: 14px; margin: 0 0 28px; }
+
+  .b-mood-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 8px; }
+  .b-mood-card {
+    border-radius: 20px; padding: 18px 14px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+    text-align: center; transition: transform 0.2s cubic-bezier(.2,.8,.2,1), border-color 0.2s ease, opacity 0.2s ease;
+  }
+  .b-mood-card svg { width: 26px; height: 26px; }
+  .b-mood-card .lb { font-weight: 700; font-size: 13.5px; }
+  .b-mood-card:hover:not(.blocked) { transform: translateY(-3px); border-color: var(--accent-1) !important; }
+  .b-mood-card.selected { background: var(--accent-grad) !important; color: #06210F; box-shadow: 0 14px 32px -12px rgba(169,244,78,0.55); }
+  .b-mood-card.selected .lb { color: #06210F; }
+  .b-mood-card.blocked { opacity: 0.3; filter: saturate(0.15); cursor: not-allowed; }
+
+  .b-actions { display: flex; gap: 10px; margin-top: 26px; }
+  .b-btn { flex: 1; padding: 15px; border-radius: 14px; font-weight: 800; font-size: 14px; border: none; }
+  .b-btn-primary { background: var(--accent-grad); color: #06210F; transition: transform 0.15s ease; }
+  .b-btn-primary:hover:not(:disabled) { transform: translateY(-1px); }
+  .b-btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+  .b-btn-ghost { background: transparent; border: 1px solid var(--glass-border-strong); color: var(--text-dim); flex: 0 0 auto; padding: 15px 20px; }
+
+  .b-modo { display: flex; gap: 4px; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 3px; margin-bottom: 16px; }
+  .b-modo button { flex: 1; padding: 10px; border: none; background: transparent; border-radius: 9px; color: var(--text-dim); font-weight: 700; font-size: 13px; }
+  .b-modo button.on { background: var(--accent-grad); color: #06210F; }
+  .b-stepper { display: flex; gap: 7px; flex-wrap: wrap; justify-content: center; margin-bottom: 20px; }
+  .b-pill { flex: 1 1 auto; text-align: center; padding: 11px 6px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-dim); font-weight: 700; font-size: 14px; }
+  .b-pill.on { background: var(--accent-grad); color: #06210F; border-color: transparent; }
+
+  .b-seed-toggle { text-align: center; margin: 4px 0 18px; }
+  .b-seed-toggle button { background: none; border: none; color: var(--text-faint); font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; }
+  .b-seed-box { margin-bottom: 18px; }
+  .b-seed-box input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 12px; color: var(--text); font-family: inherit; font-size: 13px; padding: 11px 13px; outline: none; }
+  .b-seed-res { max-height: 200px; overflow-y: auto; border-radius: 12px; margin-top: 6px; }
+  .b-res-row { display: flex; padding: 9px 11px; cursor: pointer; border-radius: 9px; }
+  .b-res-row:hover { background: rgba(255,255,255,0.06); }
+  .b-res-row .t { font-size: 12.5px; font-weight: 700; display: block; }
+  .b-res-row .ar { font-size: 11px; color: var(--text-dim); }
+  .b-seed-chip { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--accent-1); background: rgba(169,244,78,0.06); font-size: 12.5px; margin-top: 8px; }
+  .b-seed-chip .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+  .b-seed-chip button { background: none; border: none; color: var(--text-faint); }
+
+  .b-tracklist { list-style: none; margin: 0 0 8px; padding: 0; max-height: 300px; overflow-y: auto; border-radius: 16px; }
+  .b-tracklist li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+  .b-tracklist .n { width: 20px; font-size: 11px; color: var(--text-faint); }
+  .b-tracklist .info { flex: 1; min-width: 0; }
+  .b-tracklist .t { font-size: 13px; font-weight: 700; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .b-tracklist .ar { font-size: 11.5px; color: var(--text-dim); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .b-login-card { text-align: center; padding: 8px 4px; }
+  .b-login-card .icon { width: 64px; height: 64px; border-radius: 50%; background: var(--spotify); display: grid; place-items: center; margin: 0 auto 20px; box-shadow: 0 16px 40px -12px rgba(29,185,84,0.6); }
+  .b-login-card .icon svg { width: 32px; height: 32px; }
+
+  .b-done-icon { width: 72px; height: 72px; border-radius: 50%; background: var(--accent-grad); display: grid; place-items: center; margin: 0 auto 20px; color: #06210F; }
+  .b-done-icon svg { width: 34px; height: 34px; }
+  .b-result-link { display: block; text-align: center; margin-top: 6px; font-weight: 800; color: var(--accent-1); }
+  .b-erro-box { padding: 13px 15px; border-radius: 14px; border: 1px solid var(--bad); background: rgba(231,137,124,0.08); color: var(--bad); font-size: 13px; text-align: center; }
+</style>
+<script>
+Variantes.B = (() => {
+  const SPOTIFY_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2Zm4.6 14.4a.75.75 0 0 1-1 .25c-2.8-1.7-6.3-2.1-10.4-1.1a.75.75 0 1 1-.35-1.46c4.5-1.05 8.4-.6 11.5 1.3.36.22.47.68.25 1.01Zm1.2-2.8a.9.9 0 0 1-1.24.3c-3.2-2-8.1-2.55-11.9-1.4a.9.9 0 1 1-.52-1.72c4.3-1.3 9.7-.7 13.4 1.6.42.26.55.8.26 1.22Zm.1-2.9C14.5 8.4 8.9 8.2 5.6 9.2a1.08 1.08 0 1 1-.63-2.07c3.8-1.15 10-.9 13.9 1.4a1.08 1.08 0 1 1-1.1 1.86Z"/></svg>';
+  const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  let root, passo = 1, seedAberta = false, ultimoAnterior = 1;
+  const TELAS = ["clima", "tamanho", "previa", "login", "pronto"];
+
+  function template() {
+    return `
+      <div class="b-shell">
+        <div class="b-top">
+          <span class="wordmark" style="font-size:17px"><span class="sound">sound</span><span class="park">park</span></span>
+          <div class="b-dots" id="b-dots"></div>
+        </div>
+        <div class="b-track" id="b-track"></div>
+      </div>`;
+  }
+
+  function telaClima() {
+    return `
+      <div class="b-kicker">Passo 1 de 4</div>
+      <h1>Qual é o clima?</h1>
+      <p class="sub">Escolha até 3. Climas opostos se apagam sozinhos.</p>
+      <div class="b-mood-grid" id="b-mood-grid"></div>
+      <div class="b-actions"><button class="b-btn b-btn-primary" id="b-clima-next" disabled>Próximo →</button></div>`;
+  }
+
+  function telaTamanho() {
+    return `
+      <div class="b-kicker">Passo 2 de 4</div>
+      <h1>Quanto tempo de música?</h1>
+      <p class="sub">Por número de faixas, ou pela duração que você quer.</p>
+      <div class="b-modo" id="b-modo">
+        <button data-modo="faixas" class="on">Por faixas</button>
+        <button data-modo="tempo">Por duração</button>
+      </div>
+      <div class="b-stepper" id="b-stepper"></div>
+      <div class="b-seed-toggle"><button id="b-seed-toggle">${seedAberta ? "− esconder busca de música" : "+ começar de uma música específica"}</button></div>
+      ${seedAberta ? `<div class="b-seed-box">
+        <input type="text" id="b-seed-input" placeholder="Nome da música ou artista" autocomplete="off">
+        <div class="b-seed-res glass" id="b-seed-res" hidden></div>
+        <div class="b-seed-chip glass" id="b-seed-chip" hidden><span style="color:var(--accent-1)">★</span><span class="t" id="b-seed-chip-t"></span><button id="b-seed-limpar">✕</button></div>
+      </div>` : ""}
+      <div class="b-actions">
+        <button class="b-btn b-btn-ghost" id="b-tamanho-back">← Voltar</button>
+        <button class="b-btn b-btn-primary" id="b-tamanho-next">Gerar prévia →</button>
+      </div>`;
+  }
+
+  function telaPrevia() {
+    const s = Ctrl.state;
+    if (!s.preview) return `<div class="b-kicker">Passo 3 de 4</div><h1>Gerando…</h1>`;
+    if (s.preview.erro) return `<div class="b-kicker">Passo 3 de 4</div><h1>Ops</h1><div class="b-erro-box">${Ctrl.escapeHtml(s.preview.erro)}</div>
+      <div class="b-actions"><button class="b-btn b-btn-ghost" id="b-previa-back">← Voltar</button></div>`;
+    return `
+      <div class="b-kicker">Passo 3 de 4</div>
+      <h1>${s.preview.faixas.length} faixas, ${s.preview.duracao_total}</h1>
+      <p class="sub">Essa é a ordem — sequenciada por transição suave.</p>
+      <ul class="b-tracklist glass">${s.preview.faixas.slice(0, 8).map((f, i) => `
+        <li><span class="n num">${String(i + 1).padStart(2, "0")}</span>
+          <span class="info"><span class="t">${Ctrl.escapeHtml(f.track_name)}</span><span class="ar">${Ctrl.escapeHtml(f.artists)}</span></span></li>`).join("")}
+        ${s.preview.faixas.length > 8 ? `<li style="justify-content:center;color:var(--text-faint);font-size:12px">+ ${s.preview.faixas.length - 8} faixas</li>` : ""}
+      </ul>
+      <div class="b-actions">
+        <button class="b-btn b-btn-ghost" id="b-previa-back">← Voltar</button>
+        <button class="b-btn b-btn-primary" id="b-previa-next">Criar playlist →</button>
+      </div>`;
+  }
+
+  function telaLogin() {
+    return `
+      <div class="b-kicker">Passo 4 de 4</div>
+      <div class="b-login-card">
+        <div class="icon">${SPOTIFY_SVG}</div>
+        <h1>Entre com Spotify</h1>
+        <p class="sub">Sua playlist está pronta. Falta só autorizar sua conta pra criar de verdade.</p>
+        <a class="spotify-pill" href="${loginSpotifyUrl()}" style="width:100%;justify-content:center">${SPOTIFY_SVG}Continuar com Spotify</a>
+      </div>
+      <div class="b-actions"><button class="b-btn b-btn-ghost" id="b-login-back" style="flex:1">← Voltar pra prévia</button></div>`;
+  }
+
+  function telaPronto() {
+    const s = Ctrl.state;
+    if (s.criando) return `<div class="b-login-card"><h1>Criando…</h1><p class="sub">Isso leva alguns segundos.</p></div>`;
+    if (!s.resultadoCriacao) return telaLogin();
+    if (s.resultadoCriacao.erro) return `<h1 style="text-align:center">Não deu certo</h1><div class="b-erro-box">${Ctrl.escapeHtml(s.resultadoCriacao.erro)}</div>
+      <div class="b-actions"><button class="b-btn b-btn-primary" id="b-tentar-de-novo">Tentar de novo</button></div>`;
+    return `
+      <div class="b-login-card">
+        <div class="b-done-icon">${CHECK_SVG}</div>
+        <h1>Playlist criada!</h1>
+        <p class="sub">${s.resultadoCriacao.adicionadas} de ${s.resultadoCriacao.total} faixas, direto na sua conta.</p>
+        <a class="b-result-link" href="${s.resultadoCriacao.url}" target="_blank" rel="noopener noreferrer">Abrir no Spotify →</a>
+      </div>`;
+  }
+
+  const RENDERERS = { clima: telaClima, tamanho: telaTamanho, previa: telaPrevia, login: telaLogin, pronto: telaPronto };
+
+  function montarMoodGrid() {
+    const grid = root.querySelector("#b-mood-grid");
+    if (!grid) return;
+    grid.innerHTML = Ctrl.ORDER.map((key) => `
+      <button type="button" class="b-mood-card glass" data-key="${key}" style="--c:var(--accent-1)">
+        <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0">${Ctrl.ICONS[key]}</svg>
+        <span class="lb">${Ctrl.LABELS[key]}</span>
+      </button>`).join("");
+    grid.querySelectorAll(".b-mood-card").forEach((el) => el.addEventListener("click", () => Ctrl.toggleMood(el.dataset.key)));
+  }
+
+  function montarStepper() {
+    const wrap = root.querySelector("#b-stepper");
+    if (!wrap) return;
+    const s = Ctrl.state;
+    const valores = s.modo === "tempo" ? [15, 30, 45, 60, 90] : [5, 10, 15, 20, 25, 30];
+    wrap.innerHTML = valores.map((v) => `<button type="button" class="b-pill" data-v="${v}">${s.modo === "tempo" ? v + " min" : v}</button>`).join("");
+    wrap.querySelectorAll(".b-pill").forEach((el) => el.addEventListener("click", () => s.modo === "tempo" ? Ctrl.setMinutos(Number(el.dataset.v)) : Ctrl.setTamanho(Number(el.dataset.v))));
+  }
+
+  function ligarTelaAtual() {
+    const nome = TELAS[passo - 1];
+    if (nome === "clima") {
+      montarMoodGrid();
+      root.querySelector("#b-clima-next").addEventListener("click", () => ir(2));
+    } else if (nome === "tamanho") {
+      montarStepper();
+      root.querySelectorAll("#b-modo button").forEach((b) => b.addEventListener("click", () => Ctrl.setModo(b.dataset.modo)));
+      root.querySelector("#b-tamanho-back").addEventListener("click", () => ir(1));
+      root.querySelector("#b-tamanho-next").addEventListener("click", async () => { ir(3); await Ctrl.gerarPreview(); });
+      root.querySelector("#b-seed-toggle").addEventListener("click", () => { seedAberta = !seedAberta; renderPasso(); });
+      const seedInput = root.querySelector("#b-seed-input");
+      if (seedInput) {
+        let deb = null;
+        seedInput.addEventListener("input", () => { clearTimeout(deb); deb = setTimeout(() => Ctrl.buscarFaixas(seedInput.value), 250); });
+        const limpar = root.querySelector("#b-seed-limpar");
+        if (limpar) limpar.addEventListener("click", () => Ctrl.limparSemente());
+      }
+    } else if (nome === "previa") {
+      const back = root.querySelector("#b-previa-back"); if (back) back.addEventListener("click", () => ir(2));
+      const next = root.querySelector("#b-previa-next"); if (next) next.addEventListener("click", () => {
+        if (Ctrl.state.spotify.logado) { ir(5); Ctrl.criarSpotify(false); } else { ir(4); }
+      });
+    } else if (nome === "login") {
+      root.querySelector("#b-login-back").addEventListener("click", () => ir(3));
+    } else if (nome === "pronto") {
+      const de_novo = root.querySelector("#b-tentar-de-novo"); if (de_novo) de_novo.addEventListener("click", () => Ctrl.criarSpotify(false));
+    }
+  }
+
+  function renderPasso() {
+    const track = root.querySelector("#b-track");
+    track.innerHTML = `<div class="b-tela on">${RENDERERS[TELAS[passo - 1]]()}</div>`;
+    ligarTelaAtual();
+    root.querySelector("#b-dots").innerHTML = [1, 2, 3, 4].map((i) => `<i class="${i < passo ? "done" : i === passo ? "now" : ""}"></i>`).join("");
+    root.querySelector("#b-clima-next") && (root.querySelector("#b-clima-next").disabled = Ctrl.state.selected.length === 0);
+    if (RENDERERS[TELAS[passo - 1]] === telaClima) atualizarGridSelecao();
+    if (RENDERERS[TELAS[passo - 1]] === telaTamanho) atualizarStepperSelecao();
+  }
+
+  function atualizarGridSelecao() {
+    root.querySelectorAll(".b-mood-card").forEach((el) => {
+      const st = Ctrl.statusMood(el.dataset.key);
+      el.classList.toggle("selected", st.selecionado);
+      el.classList.toggle("blocked", st.bloqueado);
+    });
+    const nextBtn = root.querySelector("#b-clima-next");
+    if (nextBtn) nextBtn.disabled = Ctrl.state.selected.length === 0;
+  }
+  function atualizarStepperSelecao() {
+    const s = Ctrl.state;
+    root.querySelectorAll("#b-modo button").forEach((b) => b.classList.toggle("on", b.dataset.modo === s.modo));
+    root.querySelectorAll(".b-pill").forEach((el) => el.classList.toggle("on", Number(el.dataset.v) === (s.modo === "tempo" ? s.minutos : s.tamanho)));
+    const chip = root.querySelector("#b-seed-chip");
+    if (chip) { chip.hidden = !s.faixaInicial; if (s.faixaInicial && s.faixaInicialInfo) root.querySelector("#b-seed-chip-t").textContent = s.faixaInicialInfo.nome; }
+  }
+  function atualizarBuscaResultados() {
+    const res = root.querySelector("#b-seed-res");
+    if (!res) return;
+    const s = Ctrl.state;
+    if (!s.resultados.length) { res.hidden = true; return; }
+    res.innerHTML = s.resultados.map((f) => `<div class="b-res-row" data-id="${Ctrl.escapeHtml(f.track_id)}" data-nome="${Ctrl.escapeHtml(f.track_name)}" data-artista="${Ctrl.escapeHtml(f.artists)}">
+      <span><span class="t">${Ctrl.escapeHtml(f.track_name)}</span><span class="ar">${Ctrl.escapeHtml(f.artists)}</span></span></div>`).join("");
+    res.hidden = false;
+    res.querySelectorAll(".b-res-row").forEach((el) => el.addEventListener("click", () => Ctrl.escolherSemente(el.dataset.id, el.dataset.nome, el.dataset.artista)));
+  }
+
+  function ir(novoPasso) {
+    ultimoAnterior = passo; passo = novoPasso;
+    renderPasso();
+  }
+
+  return {
+    montar(r) {
+      root = r;
+      root.innerHTML = template();
+      renderPasso();
+      Ctrl.onChange(() => {
+        // Sempre que o login completar (checarSpotify muda estado), avança da tela de login pra criação.
+        if (TELAS[passo - 1] === "login" && Ctrl.state.spotify.logado) { ir(5); Ctrl.criarSpotify(false); return; }
+        if (TELAS[passo - 1] === "clima") atualizarGridSelecao();
+        if (TELAS[passo - 1] === "tamanho") { atualizarStepperSelecao(); atualizarBuscaResultados(); }
+        if (TELAS[passo - 1] === "previa" || TELAS[passo - 1] === "pronto") renderPasso();
+      });
+    },
+  };
+})();
+</script>
+
+<style>
+  /* ============================================================
+     VARIANTE C — Tela Viva
+     ============================================================ */
+  .c-canvas { position: fixed; inset: 0; z-index: 0; }
+  .c-disc-wrap { position: absolute; inset: 0; display: grid; place-items: center; transition: filter 0.5s ease, opacity 0.5s ease; }
+  .c-disc-wrap.dim { filter: blur(4px) brightness(0.4); opacity: 0.7; }
+  .c-disc { width: min(72vw, 560px); height: min(72vw, 560px); }
+
+  .c-shell { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; }
+  .c-top { display: flex; justify-content: space-between; align-items: center; padding: 22px 24px; }
+  .c-top .wordmark { font-size: 17px; }
+
+  .c-hint {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -120px); text-align: center;
+    pointer-events: none; transition: opacity 0.4s ease;
+  }
+  .c-hint h1 { font-size: clamp(20px, 4vw, 27px); text-shadow: 0 4px 30px rgba(0,0,0,0.6); }
+  .c-hint p { color: var(--text-dim); font-size: 13px; margin-top: 6px; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+  .c-hint.escondido { opacity: 0; }
+
+  .c-controls { margin-top: auto; padding: 0 16px 22px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+  .c-mood-row { display: flex; gap: 8px; padding: 8px; border-radius: 999px; max-width: 100%; overflow-x: auto; }
+  .c-mood-pill {
+    flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--text-dim);
+    transition: width 0.3s cubic-bezier(.2,.8,.2,1), background 0.25s ease, color 0.25s ease, opacity 0.25s ease, transform 0.2s ease;
+  }
+  .c-mood-pill svg { width: 17px; height: 17px; flex: none; }
+  .c-mood-pill .lb { font-size: 0; font-weight: 700; white-space: nowrap; max-width: 0; overflow: hidden; transition: max-width 0.3s ease, font-size 0.3s ease, margin 0.3s ease; }
+  .c-mood-pill.selected { width: auto; padding: 0 16px 0 12px; background: var(--accent-grad); color: #06210F; gap: 7px; display: flex; }
+  .c-mood-pill.selected .lb { font-size: 12px; max-width: 100px; margin-left: 2px; }
+  .c-mood-pill:hover:not(.blocked) { transform: scale(1.08); color: var(--text); }
+  .c-mood-pill.blocked { opacity: 0.25; filter: saturate(0.15); cursor: not-allowed; }
+
+  .c-action-row { display: flex; gap: 8px; align-items: center; }
+  .c-icon-pill {
+    width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; color: var(--text-dim); border: none;
+    transition: transform 0.15s ease, color 0.15s ease;
+  }
+  .c-icon-pill:hover { transform: scale(1.08); color: var(--text); }
+  .c-icon-pill svg { width: 18px; height: 18px; }
+  .c-cta-pill {
+    padding: 0 26px; height: 50px; border-radius: 999px; border: none; background: var(--accent-grad); color: #06210F;
+    font-weight: 800; font-size: 13.5px; transition: transform 0.15s ease, box-shadow 0.15s ease; opacity: 0; pointer-events: none;
+    transform: scale(0.7);
+  }
+  .c-cta-pill.on { opacity: 1; pointer-events: auto; transform: scale(1); box-shadow: 0 16px 34px -12px rgba(169,244,78,0.55); }
+  .c-cta-pill:hover { transform: scale(1.03); }
+
+  .c-search-overlay {
+    position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh;
+    background: rgba(2,4,2,0.5); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+    opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+  }
+  .c-search-overlay.on { opacity: 1; pointer-events: auto; }
+  .c-search-box { width: min(480px, 92vw); border-radius: 22px; padding: 18px; }
+  .c-search-box input { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid var(--glass-border); border-radius: 14px; color: var(--text); font-family: inherit; font-size: 14px; padding: 13px 15px; outline: none; }
+  .c-search-box input:focus { border-color: var(--accent-1); }
+  .c-search-results { max-height: 320px; overflow-y: auto; margin-top: 10px; }
+  .c-search-row { display: flex; align-items: center; gap: 10px; padding: 10px 11px; border-radius: 12px; cursor: pointer; }
+  .c-search-row:hover { background: rgba(255,255,255,0.06); }
+  .c-search-row .t { font-size: 13px; font-weight: 700; display: block; }
+  .c-search-row .ar { font-size: 11.5px; color: var(--text-dim); }
+  .c-search-close { display: block; margin: 12px auto 0; background: none; border: none; color: var(--text-faint); font-size: 12.5px; }
+  .c-seed-tag { display: flex; align-items: center; gap: 8px; padding: 7px 14px 7px 8px; border-radius: 999px; border: 1px solid var(--accent-1); background: rgba(169,244,78,0.08); font-size: 12px; margin-bottom: 10px; }
+  .c-seed-tag .t { font-weight: 700; }
+  .c-seed-tag button { background: none; border: none; color: var(--text-faint); }
+
+  .c-sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 70; max-height: 78vh;
+    border-radius: 28px 28px 0 0; padding: 10px 20px 26px; transform: translateY(102%);
+    transition: transform 0.42s cubic-bezier(.16,1,.3,1);
+  }
+  .c-sheet.on { transform: translateY(0); }
+  .c-sheet .grip { width: 40px; height: 4px; border-radius: 4px; background: var(--glass-border-strong); margin: 6px auto 16px; }
+  .c-sheet h2 { font-size: 16px; margin-bottom: 4px; }
+  .c-sheet .sub { color: var(--text-dim); font-size: 12.5px; margin: 0 0 14px; }
+  .c-sheet-list { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow-y: auto; }
+  .c-sheet-list li { display: flex; align-items: center; gap: 10px; padding: 9px 4px; }
+  .c-sheet-list .n { width: 20px; font-size: 11px; color: var(--text-faint); }
+  .c-sheet-list .info { flex: 1; min-width: 0; }
+  .c-sheet-list .t { font-size: 13px; font-weight: 700; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .c-sheet-list .ar { font-size: 11.5px; color: var(--text-dim); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .c-sheet-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .c-sheet-actions button { flex: 1; padding: 14px; border-radius: 14px; font-weight: 800; font-size: 13.5px; border: none; }
+  .c-sheet-actions .primary { background: var(--accent-grad); color: #06210F; }
+  .c-sheet-actions .primary:disabled { opacity: 0.35; }
+  .c-sheet-actions .ghost { background: transparent; border: 1px solid var(--glass-border-strong); color: var(--text-dim); flex: 0 0 auto; padding: 14px 18px; }
+
+  .c-gate-sheet { text-align: center; }
+  .c-gate-sheet .icon { width: 58px; height: 58px; border-radius: 50%; background: var(--spotify); display: grid; place-items: center; margin: 0 auto 16px; box-shadow: 0 14px 34px -10px rgba(29,185,84,0.6); }
+  .c-gate-sheet .icon svg { width: 28px; height: 28px; }
+  .c-result-box { margin-top: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--accent-3); background: rgba(76,201,107,0.08); font-size: 13px; }
+  .c-result-box.erro { border-color: var(--bad); background: rgba(231,137,124,0.08); color: var(--bad); }
+  .c-result-box a { color: var(--accent-1); font-weight: 700; }
+</style>
+<script>
+Variantes.C = (() => {
+  const SPOTIFY_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2Zm4.6 14.4a.75.75 0 0 1-1 .25c-2.8-1.7-6.3-2.1-10.4-1.1a.75.75 0 1 1-.35-1.46c4.5-1.05 8.4-.6 11.5 1.3.36.22.47.68.25 1.01Zm1.2-2.8a.9.9 0 0 1-1.24.3c-3.2-2-8.1-2.55-11.9-1.4a.9.9 0 1 1-.52-1.72c4.3-1.3 9.7-.7 13.4 1.6.42.26.55.8.26 1.22Zm.1-2.9C14.5 8.4 8.9 8.2 5.6 9.2a1.08 1.08 0 1 1-.63-2.07c3.8-1.15 10-.9 13.9 1.4a1.08 1.08 0 1 1-1.1 1.86Z"/></svg>';
+  const SEARCH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
+  let root, discEstado = null, sheetAberto = null; // sheetAberto: null | "previa" | "login"
+
+  function template() {
+    return `
+      <div class="c-canvas"><div class="c-disc-wrap" id="c-disc-wrap"><div class="c-disc" id="c-disc"></div></div></div>
+      <div class="c-shell">
+        <div class="c-top">
+          <span class="wordmark"><span class="sound">sound</span><span class="park">park</span></span>
+        </div>
+        <div class="c-hint" id="c-hint"><h1>Como você quer se sentir?</h1><p>Toque nos ícones abaixo pra escolher o clima.</p></div>
+        <div class="c-controls">
+          <div class="c-mood-row" id="c-mood-row"></div>
+          <div class="c-action-row">
+            <button type="button" class="c-icon-pill glass" id="c-search-btn" title="Buscar uma música pra começar">${SEARCH_SVG}</button>
+            <button type="button" class="c-cta-pill" id="c-cta">Ver playlist</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="c-search-overlay" id="c-search-overlay">
+        <div class="c-search-box glass-strong">
+          <div class="c-seed-tag glass" id="c-seed-tag" hidden><span style="color:var(--accent-1)">★</span><span class="t" id="c-seed-tag-t"></span><button id="c-seed-limpar">✕</button></div>
+          <input type="text" id="c-seed-input" placeholder="Nome da música ou artista" autocomplete="off">
+          <div class="c-search-results" id="c-search-results"></div>
+          <button class="c-search-close" id="c-search-close">fechar</button>
+        </div>
+      </div>
+
+      <div class="c-sheet glass-strong" id="c-sheet"><div class="grip"></div><div id="c-sheet-body"></div></div>`;
+  }
+
+  function corAtual() {
+    const media = Ctrl.valenciaEnergiaMedias();
+    if (!media) return ["#A9F44E", "#1F8A46"];
+    // gera duas variações da cor calculada, pra o label do disco ter um degradê coerente com o clima
+    return [media.cor, "#0F2013"];
+  }
+
+  function montarMoodRow() {
+    const wrap = root.querySelector("#c-mood-row");
+    wrap.innerHTML = Ctrl.ORDER.map((key) => `
+      <button type="button" class="c-mood-pill glass" data-key="${key}">
+        <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0">${Ctrl.ICONS[key]}</svg>
+        <span class="lb">${Ctrl.LABELS[key]}</span>
+      </button>`).join("");
+    wrap.querySelectorAll(".c-mood-pill").forEach((el) => {
+      el.addEventListener("click", async () => {
+        const r = await Ctrl.toggleMood(el.dataset.key);
+        if (r.recusado && typeof gsap !== "undefined") gsap.fromTo(el, { x: 0 }, { x: 5, duration: 0.07, yoyo: true, repeat: 3 });
+      });
+    });
+  }
+
+  function render(s) {
+    root.querySelectorAll(".c-mood-pill").forEach((el) => {
+      const st = Ctrl.statusMood(el.dataset.key);
+      el.classList.toggle("selected", st.selecionado);
+      el.classList.toggle("blocked", st.bloqueado);
+    });
+
+    root.querySelector("#c-hint").classList.toggle("escondido", s.selected.length > 0);
+
+    const cta = root.querySelector("#c-cta");
+    cta.classList.toggle("on", s.selected.length > 0);
+    cta.textContent = s.preview && !s.preview.erro ? "Ver playlist" : "Gerar playlist";
+
+    const [corA] = corAtual();
+    if (discEstado) recolorirDisco(discEstado, corA, "#0F2013");
+    if (discEstado) discEstado.velocidade = (Math.PI * 2) / Math.max(4, 12 - s.selected.length * 2); // gira mais rápido com mais energia selecionada
+
+    // sheet de prévia
+    if (sheetAberto === "previa") montarSheetPrevia(s);
+    if (sheetAberto === "login") montarSheetLogin(s);
+
+    const seedTag = root.querySelector("#c-seed-tag");
+    seedTag.hidden = !s.faixaInicial;
+    if (s.faixaInicial && s.faixaInicialInfo) root.querySelector("#c-seed-tag-t").textContent = s.faixaInicialInfo.nome;
+  }
+
+  function abrirSheet(qual) {
+    sheetAberto = qual;
+    root.querySelector("#c-disc-wrap").classList.add("dim");
+    root.querySelector("#c-sheet").classList.add("on");
+    if (qual === "previa") montarSheetPrevia(Ctrl.state);
+    if (qual === "login") montarSheetLogin(Ctrl.state);
+  }
+  function fecharSheet() {
+    sheetAberto = null;
+    root.querySelector("#c-disc-wrap").classList.remove("dim");
+    root.querySelector("#c-sheet").classList.remove("on");
+  }
+
+  function montarSheetPrevia(s) {
+    const body = root.querySelector("#c-sheet-body");
+    if (!s.preview) { body.innerHTML = `<h2>Gerando…</h2>`; return; }
+    if (s.preview.erro) { body.innerHTML = `<h2>Ops</h2><div class="c-result-box erro">${Ctrl.escapeHtml(s.preview.erro)}</div>`; return; }
+    body.innerHTML = `
+      <h2>${s.preview.faixas.length} faixas</h2>
+      <p class="sub">${s.preview.duracao_total} · sequenciada por transição suave</p>
+      <ul class="c-sheet-list">${s.preview.faixas.map((f, i) => `
+        <li><span class="n num">${String(i + 1).padStart(2, "0")}</span>
+          <span class="info"><span class="t">${Ctrl.escapeHtml(f.track_name)}</span><span class="ar">${Ctrl.escapeHtml(f.artists)}</span></span></li>`).join("")}</ul>
+      <div class="c-sheet-actions">
+        <button class="ghost" id="c-sheet-fechar">Fechar</button>
+        <button class="primary" id="c-sheet-criar">Criar no Spotify</button>
+      </div>
+      <div id="c-resultado-criacao"></div>`;
+    root.querySelector("#c-sheet-fechar").addEventListener("click", fecharSheet);
+    root.querySelector("#c-sheet-criar").addEventListener("click", () => {
+      if (!Ctrl.state.spotify.logado) { abrirSheet("login"); return; }
+      Ctrl.criarSpotify(false);
+    });
+    const resBox = root.querySelector("#c-resultado-criacao");
+    if (s.resultadoCriacao) {
+      resBox.innerHTML = s.resultadoCriacao.erro
+        ? `<div class="c-result-box erro">${Ctrl.escapeHtml(s.resultadoCriacao.erro)}</div>`
+        : `<div class="c-result-box">Criada! ${s.resultadoCriacao.adicionadas}/${s.resultadoCriacao.total} faixas — <a href="${s.resultadoCriacao.url}" target="_blank" rel="noopener noreferrer">abrir no Spotify</a></div>`;
+    }
+  }
+
+  function montarSheetLogin() {
+    const body = root.querySelector("#c-sheet-body");
+    body.innerHTML = `
+      <div class="c-gate-sheet">
+        <div class="icon">${SPOTIFY_SVG}</div>
+        <h2>Entre com Spotify pra criar</h2>
+        <p class="sub">Sua playlist está pronta na prévia. Autorize sua conta pra criar de verdade.</p>
+        <a class="spotify-pill" href="${loginSpotifyUrl()}" style="width:100%;justify-content:center;margin-bottom:10px">${SPOTIFY_SVG}Continuar com Spotify</a>
+        <button class="c-search-close" id="c-sheet-login-voltar">voltar pra prévia</button>
+      </div>`;
+    root.querySelector("#c-sheet-login-voltar").addEventListener("click", () => abrirSheet("previa"));
+  }
+
+  function renderBusca(s) {
+    const res = root.querySelector("#c-search-results");
+    if (!s.resultados.length) { res.innerHTML = ""; return; }
+    res.innerHTML = s.resultados.map((f) => `
+      <div class="c-search-row" data-id="${Ctrl.escapeHtml(f.track_id)}" data-nome="${Ctrl.escapeHtml(f.track_name)}" data-artista="${Ctrl.escapeHtml(f.artists)}">
+        <span><span class="t">${Ctrl.escapeHtml(f.track_name)}</span><span class="ar">${Ctrl.escapeHtml(f.artists)}</span></span>
+      </div>`).join("");
+    res.querySelectorAll(".c-search-row").forEach((el) => el.addEventListener("click", async () => {
+      await Ctrl.escolherSemente(el.dataset.id, el.dataset.nome, el.dataset.artista);
+      root.querySelector("#c-search-overlay").classList.remove("on");
+    }));
+  }
+
+  let aguardandoLoginParaCriar = false;
+
+  function ligar() {
+    root.querySelector("#c-cta").addEventListener("click", async () => {
+      if (!Ctrl.state.selected.length) return;
+      if (!Ctrl.state.preview) await Ctrl.gerarPreview();
+      abrirSheet("previa");
+    });
+    root.querySelector("#c-search-btn").addEventListener("click", () => root.querySelector("#c-search-overlay").classList.add("on"));
+    root.querySelector("#c-search-close").addEventListener("click", () => root.querySelector("#c-search-overlay").classList.remove("on"));
+    root.querySelector("#c-seed-limpar").addEventListener("click", () => Ctrl.limparSemente());
+    let deb = null;
+    const seedInput = root.querySelector("#c-seed-input");
+    seedInput.addEventListener("input", () => { clearTimeout(deb); deb = setTimeout(() => Ctrl.buscarFaixas(seedInput.value), 250); });
+
+    Ctrl.onChange((s) => {
+      if (sheetAberto === "login" && s.spotify.logado) { abrirSheet("previa"); Ctrl.criarSpotify(false); }
+      render(s);
+      renderBusca(s);
+    });
+  }
+
+  return {
+    montar(r) {
+      root = r;
+      root.innerHTML = template();
+      montarMoodRow();
+      discEstado = montarDisco(root.querySelector("#c-disc"), ["#A9F44E", "#1F8A46"]);
+      ligar();
+      render(Ctrl.state);
+    },
+  };
+})();
+</script>
+
+<script>
+/* ================================================================
+   SWITCHER DE PROTÓTIPO
+   ================================================================ */
+const VARIANTES = { A: "Central de Comando", B: "Jornada Guiada", C: "Tela Viva" };
+let variante = (new URLSearchParams(location.search).get("variant") || "A").toUpperCase();
+if (!VARIANTES[variante]) variante = "A";
+
+function montarVariante() {
+  Object.keys(VARIANTES).forEach((k) => { document.querySelector(`[data-app="${k}"]`).hidden = k !== variante; });
+  document.getElementById("proto-lab").textContent = `${variante} — ${VARIANTES[variante]}`;
+  const root = document.querySelector(`[data-app="${variante}"]`);
+  if (Variantes[variante] && !root.dataset.montado) {
+    Variantes[variante].montar(root);
+    root.dataset.montado = "1";
+  }
+  atualizarEstadoBarra();
+}
+
+function atualizarEstadoBarra() {
+  const s = Ctrl.state;
+  const partes = [];
+  partes.push(`moods: ${s.selected.length ? s.selected.join("+") : "—"}`);
+  partes.push(s.modo === "tempo" ? `${s.minutos}min` : `${s.tamanho}fx`);
+  if (s.faixaInicial) partes.push(`semente: ${s.faixaInicialInfo ? s.faixaInicialInfo.nome : s.faixaInicial}`);
+  partes.push(`spotify: ${s.spotify.logado ? "logado" : "deslogado"}`);
+  partes.push(`cota: ${s.cota.restantes}`);
+  document.getElementById("proto-state").textContent = partes.join(" · ");
+}
+Ctrl.onChange(atualizarEstadoBarra);
+
+function trocar(passo) {
+  const chaves = Object.keys(VARIANTES);
+  variante = chaves[(chaves.indexOf(variante) + passo + chaves.length) % chaves.length];
+  const u = new URL(location); u.searchParams.set("variant", variante); history.replaceState({}, "", u);
+  montarVariante();
+}
+document.getElementById("prev").onclick = () => trocar(-1);
+document.getElementById("next").onclick = () => trocar(1);
+document.addEventListener("keydown", (e) => {
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (e.key === "ArrowLeft") trocar(-1);
+  if (e.key === "ArrowRight") trocar(1);
+});
+
+Ctrl.iniciar().then(() => {
+  montarVariante();
+  // Voltando do /callback real (login concluído ou recusado): busca o status
+  // de verdade e limpa o parâmetro pra um F5 não repetir.
+  const params = new URLSearchParams(location.search);
+  if (params.get("spotify")) {
+    const u = new URL(location); u.searchParams.delete("spotify"); history.replaceState({}, "", u);
+    Ctrl.refreshSpotify();
+  }
+});
+</script>
+
+</body>
+</html>
